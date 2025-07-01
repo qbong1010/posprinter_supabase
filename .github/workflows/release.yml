@@ -35,7 +35,7 @@ jobs:
         $info = @{
           version = "${{ env.VERSION }}"
           updated_at = Get-Date -Format "yyyy-MM-dd"
-          description = "자동 빌드된 릴리스 버전입니다"
+          description = "Auto-generated release"
         }
         $info | ConvertTo-Json -Depth 10 | Set-Content version.json -Encoding UTF8
       shell: powershell
@@ -56,7 +56,7 @@ jobs:
       run: |
         gh release create "v${{ env.VERSION }}" `
           --title "POS Printer v${{ env.VERSION }}" `
-          --notes "자동 생성 릴리스입니다." `
-          "POS_Printer_v${{ env.VERSION }}.zip#릴리스 파일" `
-          "INSTALLATION_GUIDE.md#설치 가이드"
+          --notes "This is Auto-generated release" `
+          "POS_Printer_v${{ env.VERSION }}.zip#Release file" `
+          "INSTALLATION_GUIDE.md#Installation Guide"
       shell: pwsh
