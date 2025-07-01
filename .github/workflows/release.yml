@@ -3,72 +3,60 @@ name: Release POS Printer
 on:
   push:
     tags:
-      - 'v*.*.*'
-  release:
-    types: [published]
+      - 'v*.*.*'  # v1.0.0 같이 버전 태그를 push할 때만 작동
 
 jobs:
   build-and-release:
     runs-on: windows-latest
-    
+
     steps:
-    - name: Checkout code
+    - name: 📥 Checkout code
       uses: actions/checkout@v4
-      
-    - name: Set up Python
+
+    - name: 🐍 Set up Python 3.9
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        
-    - name: Install dependencies
+
+    - name: 📦 Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        
-    - name: Get version from tag
-      id: get_version
+
+    - name: 🔖 Extract version from tag
+      id: extract_version
       run: |
         $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
         echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-        echo "::set-output name=version::$version"
       shell: powershell
-      
-    - name: Update version.json
+
+    - name: 📝 Create version.json
       run: |
-        $versionInfo = @{
+        $info = @{
           version = "${{ env.VERSION }}"
           updated_at = Get-Date -Format "yyyy-MM-dd"
-          description = "자동 배포 버전 ${{ env.VERSION }}"
+          description = "자동 빌드된 릴리스 버전입니다"
         }
-        $versionInfo | ConvertTo-Json -Depth 10 | Set-Content version.json -Encoding UTF8
+        $info | ConvertTo-Json -Depth 10 | Set-Content version.json -Encoding UTF8
       shell: powershell
-      
-    - name: Create release package
+
+    - name: 🏗️ Build and package
       run: |
         .\deployment_guide.ps1 -Version "${{ env.VERSION }}" -OutputPath ".\release"
       shell: powershell
-      
-    - name: Create ZIP archive
+
+    - name: 📦 Zip release files
       run: |
         Compress-Archive -Path ".\release\*" -DestinationPath "POS_Printer_v${{ env.VERSION }}.zip" -Force
       shell: powershell
-      
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
+
+    - name: 🚀 Create GitHub Release and Upload Assets
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./POS_Printer_v${{ env.VERSION }}.zip
-        asset_name: POS_Printer_v${{ env.VERSION }}.zip
-        asset_content_type: application/zip
-        
-    - name: Upload Installation Guide
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./INSTALLATION_GUIDE.md
-        asset_name: INSTALLATION_GUIDE.md
-        asset_content_type: text/markdown 
+      run: |
+        gh release create "v${{ env.VERSION }}" `
+          --title "POS Printer v${{ env.VERSION }}" `
+          --notes "자동 생성 릴리스입니다." `
+          "POS_Printer_v${{ env.VERSION }}.zip#릴리스 파일" `
+          "INSTALLATION_GUIDE.md#설치 가이드"
+      shell: pwsh
