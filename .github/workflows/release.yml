@@ -28,7 +28,7 @@ jobs:
       run: |
         $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
         echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-      shell: powershell
+      shell: pwsh
 
     - name: 📝 Create version.json
       run: |
@@ -38,17 +38,17 @@ jobs:
           description = "Auto-generated release"
         }
         $info | ConvertTo-Json -Depth 10 | Set-Content version.json -Encoding UTF8
-      shell: powershell
+      shell: pwsh
 
     - name: 🏗️ Build and package
       run: |
         .\deployment_guide.ps1 -Version "${{ env.VERSION }}" -OutputPath ".\release"
-      shell: powershell
+      shell: pwsh
 
     - name: 📦 Zip release files
       run: |
         Compress-Archive -Path ".\release\*" -DestinationPath "POS_Printer_v${{ env.VERSION }}.zip" -Force
-      shell: powershell
+      shell: pwsh
 
     - name: 🚀 Create GitHub Release and Upload Assets
       env:
