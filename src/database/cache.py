@@ -232,3 +232,42 @@ class SupabaseCache:
             return [dict(row) for row in rows]
         finally:
             conn.close()
+
+    def delete_order_from_cache(self, order_id: int) -> bool:
+        """로컬 캐시에서 주문을 삭제합니다."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 주문 항목 옵션 삭제
+            cursor.execute("""
+                DELETE FROM order_item_option 
+                WHERE order_item_id IN (
+                    SELECT order_item_id FROM order_item WHERE order_id = ?
+                )
+            """, (order_id,))
+            
+            # 주문 항목 삭제
+            cursor.execute('DELETE FROM order_item WHERE order_id = ?', (order_id,))
+            
+            # 주문 삭제
+            cursor.execute('DELETE FROM "order" WHERE order_id = ?', (order_id,))
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"로컬 캐시에서 주문 {order_id} 삭제 성공")
+            return True
+            
+        except Exception as e:
+            logger.error(f"로컬 캐시에서 주문 삭제 오류: {e}")
+            # Supabase에도 에러 로깅
+            error_logger = get_error_logger()
+            if error_logger:
+                error_logger.log_database_error(
+                    operation="delete_order",
+                    error=e,
+                    table_name="order",
+                    order_id=str(order_id)
+                )
+            return False

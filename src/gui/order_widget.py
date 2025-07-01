@@ -97,6 +97,27 @@ class OrderWidget(QWidget):
         self.print_both_btn.clicked.connect(self.print_both_receipts)
         top_layout.addWidget(self.print_both_btn, alignment=Qt.AlignRight)
         
+        # 주문취소 버튼 추가
+        self.cancel_order_btn = QPushButton("주문취소")
+        self.cancel_order_btn.clicked.connect(self.cancel_order)
+        self.cancel_order_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #DC143C;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #B22222;
+            }
+            QPushButton:pressed {
+                background-color: #8B0000;
+            }
+        """)
+        top_layout.addWidget(self.cancel_order_btn)
+        
         layout.addLayout(top_layout)
         
         # 진행 상태 표시 바
@@ -210,6 +231,7 @@ class OrderWidget(QWidget):
         self.print_customer_btn.setEnabled(not is_loading)
         self.print_kitchen_btn.setEnabled(not is_loading)
         self.print_both_btn.setEnabled(not is_loading)
+        self.cancel_order_btn.setEnabled(not is_loading)
         self.progress_bar.setVisible(is_loading)
         if is_loading:
             self.progress_bar.setRange(0, 0)  # 무한 로딩 표시
@@ -786,3 +808,103 @@ class OrderWidget(QWidget):
     def clear_temporary_message(self):
         """임시 메시지를 지웁니다."""
         self.notice_label.setText("")
+
+    @Slot()
+    def cancel_order(self):
+        """선택된 주문을 취소(삭제)합니다."""
+        try:
+            # 선택된 주문 확인
+            current_row = self.order_table.currentRow()
+            if current_row < 0:
+                QMessageBox.warning(self, "경고", "취소할 주문을 선택해주세요.")
+                return
+                
+            # 주문 데이터 가져오기
+            order_item = self.order_table.item(current_row, 0)
+            if not order_item:
+                QMessageBox.warning(self, "경고", "선택한 주문 데이터를 찾을 수 없습니다.")
+                return
+                
+            order_data = order_item.data(Qt.UserRole)
+            if not order_data:
+                QMessageBox.warning(self, "경고", "선택한 주문 데이터가 유효하지 않습니다.")
+                return
+            
+            order_id = order_data.get("order_id")
+            company_name = order_data.get("company_name", "")
+            
+            # 확인 팝업 표시
+            reply = QMessageBox.question(
+                self,
+                "주문 취소 확인",
+                f"주문번호: {order_id}\n회사명: {company_name}\n\n주문을 취소하시겠습니까?\n\n※ 주의: 취소된 주문은 복구할 수 없습니다.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # 로딩 상태 설정
+            self.set_loading_state(True)
+            
+            # Supabase에서 주문 삭제
+            from src.supabase_client import SupabaseClient
+            supabase_client = SupabaseClient()
+            supabase_success = supabase_client.delete_order(order_id)
+            
+            # 로컬 캐시에서도 주문 삭제
+            cache_success = self.cache.delete_order_from_cache(order_id)
+            
+            if supabase_success and cache_success:
+                # 테이블에서 해당 행 제거
+                self.order_table.removeRow(current_row)
+                
+                # orders 리스트에서도 제거
+                self.orders = [order for order in self.orders if order.get("order_id") != order_id]
+                
+                QMessageBox.information(self, "성공", f"주문번호 {order_id}이(가) 성공적으로 취소되었습니다.")
+                logging.info(f"주문 {order_id} 취소 성공")
+                
+                # 성공 메시지 표시
+                self.show_temporary_message(f"주문 {order_id}이(가) 취소되었습니다.", 3000)
+                
+            elif supabase_success:
+                # Supabase에서는 성공했지만 로컬 캐시에서 실패
+                QMessageBox.warning(
+                    self, 
+                    "부분 성공", 
+                    f"주문 {order_id}이(가) 서버에서는 취소되었지만 로컬 캐시 업데이트에 실패했습니다.\n주문 목록을 새로고침해주세요."
+                )
+                # 주문 목록 새로고침
+                self.refresh_orders()
+                
+            elif cache_success:
+                # 로컬 캐시에서는 성공했지만 Supabase에서 실패
+                QMessageBox.warning(
+                    self, 
+                    "부분 성공", 
+                    f"주문 {order_id}이(가) 로컬에서는 취소되었지만 서버 업데이트에 실패했습니다.\n네트워크 연결을 확인해주세요."
+                )
+                # 테이블에서 해당 행 제거
+                self.order_table.removeRow(current_row)
+                self.orders = [order for order in self.orders if order.get("order_id") != order_id]
+                
+            else:
+                # 모두 실패
+                QMessageBox.critical(
+                    self, 
+                    "취소 실패", 
+                    f"주문 {order_id} 취소에 실패했습니다.\n네트워크 연결과 권한을 확인해주세요."
+                )
+                logging.error(f"주문 {order_id} 취소 실패 - Supabase: {supabase_success}, Cache: {cache_success}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"주문 취소 중 오류가 발생했습니다:\n{str(e)}")
+            logging.error(f"주문 취소 오류: {e}")
+            # Supabase에도 에러 로깅
+            error_logger = get_error_logger()
+            if error_logger:
+                error_logger.log_error(e, "주문 취소 오류", {"context": "cancel_order", "order_id": str(order_id) if 'order_id' in locals() else "unknown"})
+        finally:
+            self.set_loading_state(False)

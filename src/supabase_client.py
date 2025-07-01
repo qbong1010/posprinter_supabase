@@ -138,3 +138,47 @@ class SupabaseClient(QObject):
                     method="GET"
                 )
             return None
+
+    def delete_order(self, order_id: int) -> bool:
+        """특정 주문을 삭제합니다."""
+        try:
+            # 주문 항목 옵션 삭제
+            resp = requests.delete(
+                f"{self.base_url}/rest/v1/order_item_option",
+                headers=self.headers,
+                params={"order_item_id": f"in.(select order_item_id from order_item where order_id={order_id})"}
+            )
+            if not resp.ok:
+                logger.warning(f"주문 항목 옵션 삭제 응답: {resp.status_code} - {resp.text}")
+            
+            # 주문 항목 삭제
+            resp = requests.delete(
+                f"{self.base_url}/rest/v1/order_item",
+                headers=self.headers,
+                params={"order_id": f"eq.{order_id}"}
+            )
+            if not resp.ok:
+                logger.warning(f"주문 항목 삭제 응답: {resp.status_code} - {resp.text}")
+            
+            # 주문 삭제
+            resp = requests.delete(
+                f"{self.base_url}/rest/v1/order",
+                headers=self.headers,
+                params={"order_id": f"eq.{order_id}"}
+            )
+            resp.raise_for_status()
+            
+            logger.info(f"주문 {order_id} 삭제 성공")
+            return True
+            
+        except Exception as e:
+            logger.exception("주문 삭제 오류: %s", e)
+            # Supabase에도 에러 로깅
+            error_logger = get_error_logger()
+            if error_logger:
+                error_logger.log_network_error(
+                    url=f"{self.base_url}/rest/v1/order",
+                    error=e,
+                    method="DELETE"
+                )
+            return False
