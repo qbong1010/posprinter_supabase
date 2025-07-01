@@ -1,52 +1,61 @@
-# 환경 변수 파일
+# 환경변수 파일 (가장 중요!)
 .env
+.env.local
+.env.*.local
 
-# 가상환경
-venv/
-env/
-ENV/
+# 로그 파일들
+*.log
 
-# Python 캐시 파일들
+# 데이터베이스 파일들
+*.db
+*.sqlite
+*.sqlite3
+
+# Python 캐시
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 
-# 빌드 관련 파일들
-build/
-dist/
-*.egg-info/
+# 가상환경
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
-# 로그 파일들
-*.log
-logs/
-
-# 데이터베이스 파일들 (캐시용)
-cache.db
-
-# 프린터 출력 파일들
-src/printer/output/receipt_*.txt
-src/printer/output/*.bin
-deploy/src/printer/output/receipt_*.txt
-
-# 임시 JSON 파일들
+# 임시 파일들
+*.tmp
+*.temp
 last_update_check.json
 
-#임시 영수증
-*.bin
+# 출력 파일들
+src/printer/output/
+output/
+# 출력 관련 특정 파일들만
+src/printer/output/*.txt
+src/printer/output/*.bin
 
-# 실행 파일들
-*.exe
+# 라이브러리 파일들
+*.dll
+*.so
+*.dylib
 
-# IDE 관련 파일들
+# IDE 설정 파일들
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Windows 관련 파일들
+# 시스템 파일들
+.DS_Store
 Thumbs.db
-Desktop.ini
 
-# PyInstaller 빌드 결과물 (설정 파일은 유지)
-# *.spec
+# 빌드 파일들
+build/
+dist/
+*.egg-info/
+
+# PyInstaller 관련
+*.manifest
+# POSPrinter.spec은 프로젝트 파일이므로 제외하지 않음 
