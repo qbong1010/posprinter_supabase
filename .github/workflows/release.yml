@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*.*.*'  # v1.0.0 같이 버전 태그를 push할 때만 작동
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     runs-on: windows-latest
