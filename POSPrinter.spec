@@ -1,13 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files, get_vcr_dll_path
-
-# Visual C++ Redistributable DLL 경로 가져오기
-vcr_dll_path = get_vcr_dll_path()
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[(vcr_dll_path, '.')] if vcr_dll_path else [],
+    binaries=collect_dynamic_libs("vcruntime140.dll"),
     datas=[
         ('src', 'src'), 
         ('printer_config.json', '.'), 
