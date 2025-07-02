@@ -37,7 +37,6 @@ src/printer/output/*.txt
 src/printer/output/*.bin
 
 # 라이브러리 파일들
-*.dll
 *.so
 *.dylib
 
