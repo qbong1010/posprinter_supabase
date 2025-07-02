@@ -165,7 +165,7 @@ if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 }
 
 # Set installation paths
-`$InstallPath = "`$env:ProgramFiles\POS Printer"
+`$InstallPath = "C:\Pos Printer"
 `$DesktopPath = [Environment]::GetFolderPath("Desktop")
 `$StartMenuPath = "`$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
 
@@ -217,7 +217,7 @@ $uninstallerScript = @"
 # POS Printer Uninstaller Script
 Write-Host "Uninstalling POS Printer..." -ForegroundColor Yellow
 
-`$InstallPath = "`$env:ProgramFiles\POS Printer"
+`$InstallPath = "C:\Pos Printer"
 `$DesktopShortcut = [Environment]::GetFolderPath("Desktop") + "\POS Printer.lnk"
 `$StartMenuShortcut = "`$env:ProgramData\Microsoft\Windows\Start Menu\Programs\POS Printer.lnk"
 
