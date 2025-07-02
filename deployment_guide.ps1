@@ -140,9 +140,9 @@ foreach ($file in $docFiles) {
 }
 
 # Copy installation batch file
-if (Test-Path "AutoInstall.bat") {
-    Copy-Item "AutoInstall.bat" $OutputPath -Force
-    Write-ColorOutput "AutoInstall.bat copied" "Green"
+if (Test-Path "간편설치.bat") {
+    Copy-Item "간편설치.bat" $OutputPath -Force
+    Write-ColorOutput "간편설치.bat copied" "Green"
 }
 
 # Create installer script
@@ -176,7 +176,7 @@ try {
     }
     
     # Copy files
-    Copy-Item "POSPrinter\*" `$InstallPath -Recurse -Force
+    Copy-Item "`$PSScriptRoot\POSPrinter\*" `$InstallPath -Recurse -Force
     
     # Create desktop shortcut
     `$WshShell = New-Object -comObject WScript.Shell

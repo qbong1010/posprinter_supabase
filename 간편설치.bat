@@ -4,11 +4,11 @@ cls
 
 echo.
 echo =================================
-echo  POS 프린터 설치 프로그램 v1.2
+echo      POS 프린터 설치 프로그램
 echo =================================
 echo.
 
-:: 관리자 권한 확인 및 요청
+:: Check for administrator privileges and request if necessary
 net session >nul 2>&1
 if %errorLevel% neq 0 (
     echo [!] 관리자 권한이 필요합니다.
@@ -17,17 +17,17 @@ if %errorLevel% neq 0 (
     exit /b
 )
 
-:: PowerShell 스크립트 경로 설정
+:: Set PowerShell script path
 set "SCRIPT_PATH=%~dp0installer.ps1"
 
 echo [*] 설치 스크립트를 확인하는 중...
 echo    - 경로: %SCRIPT_PATH%
 echo.
 
-:: 설치 스크립트 존재 여부 확인
+:: Check if the installer script exists
 if not exist "%SCRIPT_PATH%" (
     echo [!] 오류: 설치 스크립트를 찾을 수 없습니다.
-    echo     'installer.ps1' 파일이 있는지 확인하세요.
+    echo     'installer.ps1' 파일이 같은 폴더에 있는지 확인하세요.
     echo.
     pause
     exit /b
@@ -36,7 +36,7 @@ if not exist "%SCRIPT_PATH%" (
 echo [*] PowerShell 설치 프로그램을 시작합니다...
 echo.
 
-:: PowerShell 실행
+:: Execute PowerShell
 powershell -ExecutionPolicy Bypass -File "%SCRIPT_PATH%"
 
 echo.
