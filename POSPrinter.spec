@@ -1,10 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, get_vcr_dll_path
+
+# Visual C++ Redistributable DLL 경로 가져오기
+vcr_dll_path = get_vcr_dll_path()
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
+    binaries=[(vcr_dll_path, '.')] if vcr_dll_path else [],
     datas=[
         ('src', 'src'), 
         ('printer_config.json', '.'), 
