@@ -9,12 +9,13 @@ a = Analysis(
         ('src', 'src'), 
         ('printer_config.json', '.'), 
         ('version.json', '.'),
+        ('libusb-1.0.dll', '.'),
     ] + collect_data_files('escpos'),
-    hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui', 'websockets', 'requests', 'python_escpos', 'psutil', 'pyusb', 'serial', 'escpos', 'escpos.capabilities', 'python-dotenv', 'dotenv', 'zoneinfo', 'pathlib', 'threading', 'signal', 'atexit', 'json', 'datetime', 'timedelta', 'src.utils'],
+    hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui', 'websockets', 'requests', 'escpos', 'psutil', 'serial', 'escpos.capabilities', 'dotenv', 'src.utils'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['usb.core', 'usb.backend', 'usb.util'],
     noarchive=False,
     optimize=0,
 )
@@ -23,9 +24,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='POSPrinter',
     debug=False,
     bootloader_ignore_signals=False,
@@ -39,4 +39,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='POSPrinter'
 )

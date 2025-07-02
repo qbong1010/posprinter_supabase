@@ -54,6 +54,7 @@ Thumbs.db
 # 빌드 파일들
 build/
 dist/
+release/
 *.egg-info/
 
 # PyInstaller 관련

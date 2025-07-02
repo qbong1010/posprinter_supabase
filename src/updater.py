@@ -132,21 +132,21 @@ class AutoUpdater:
     
     def apply_update(self, zip_path: str, backup: bool = True) -> bool:
         """
-        업데이트 적용 (실행 파일 교체 방식)
+        업데이트 적용 (폴더 전체 교체 방식)
         
         1. 임시 폴더에 압축 해제
-        2. 업데이트용 배치 파일 생성
-        3. 배치 파일 실행하여 현재 프로세스 종료 및 파일 교체
+        2. 압축 해제된 내용물에서 업데이트 소스 폴더(POSPrinter.exe가 있는 곳)를 찾음
+        3. 새 버전의 폴더 내용물 전체를 현재 설치 폴더로 덮어쓰는 배치 파일 생성
+        4. 배치 파일 실행하여 자동 업데이트 진행
         
         Args:
             zip_path: 다운로드된 ZIP 파일 경로
             backup: 백업 생성 여부 (이 방식에서는 미사용)
             
         Returns:
-            성공 시 배치파일 실행, 실패 시 False
+            성공 시 배치파일 실행 후 프로그램 종료, 실패 시 False
         """
         try:
-            # 실행 파일 위치를 기준으로 모든 경로를 결정
             if not getattr(sys, 'frozen', False):
                 self.logger.error("이 업데이트 방식은 빌드된 실행 파일에서만 사용 가능합니다.")
                 return False
@@ -157,56 +157,33 @@ class AutoUpdater:
             temp_dir = current_dir / "temp_update"
             extract_dir = temp_dir / "extracted"
             
-            # 이전 압축 해제 폴더 정리
             if extract_dir.exists():
                 self._safe_remove_tree(extract_dir)
             extract_dir.mkdir(parents=True, exist_ok=True)
             
-            # ZIP 파일 압축 해제
             self.logger.info("업데이트 파일 압축 해제 중...")
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_dir)
             
-            # 압축 해제된 폴더에서 새 실행 파일 찾기
-            # GitHub Release는 종종 repo-name-tag 폴더 안에 소스를 넣음
-            new_exe_path = None
-            possible_exe_names = [current_exe.name, "POSPrinter.exe"]
-            
-            # 최상위 디렉토리에서 먼저 찾아보기
-            for name in possible_exe_names:
-                if (extract_dir / name).exists():
-                    new_exe_path = extract_dir / name
+            # POSPrinter.exe를 포함하는 최상위 폴더를 찾는다.
+            source_dir = None
+            for root, dirs, files in os.walk(extract_dir):
+                if current_exe.name in files:
+                    source_dir = Path(root)
+                    self.logger.info(f"업데이트 소스 폴더 발견: {source_dir}")
                     break
             
-            # 하위 디렉토리에서도 찾아보기 (GitHub 소스코드 zip 대비)
-            if not new_exe_path:
-                for root, _, files in os.walk(extract_dir):
-                    for file in files:
-                        if file in possible_exe_names:
-                            new_exe_path = Path(root) / file
-                            break
-                    if new_exe_path:
-                        break
-
-            if not new_exe_path:
-                self.logger.error("압축 파일에서 새 실행 파일을 찾을 수 없습니다.")
+            if not source_dir:
+                self.logger.error(f"압축 파일에서 '{current_exe.name}'을 포함한 배포 폴더를 찾지 못했습니다.")
                 return False
 
-            self.logger.info(f"새 실행 파일 위치: {new_exe_path}")
-
-            # 업데이트용 배치 파일 생성
             updater_bat_path = current_dir / "update_runner.bat"
-            
-            # 실행중인 프로세스 ID 가져오기
             pid = os.getpid()
 
-            # 배치 스크립트 내용
-            # 1. 원본 프로세스가 종료될 때까지 대기 (taskkill이 즉시 종료되지 않을 수 있음)
-            # 2. 기존 실행 파일을 .old로 이름 변경 (삭제 실패 대비)
-            # 3. 새 실행 파일을 현재 위치로 복사
-            # 4. 새 프로그램 실행
-            # 5. 임시 파일(.old, .bat) 삭제 스크립트 실행 후 자신도 삭제
+            # Robocopy를 사용하여 폴더 내용물 전체를 미러링 (안전하고 빠름)
+            # /E: 하위 디렉토리 포함, /PURGE: 소스에 없는 파일/디렉토리 삭제, /NP: 진행률 표시 안함
             batch_content = f"""@echo off
+chcp 65001 > nul
 echo.
 echo ===================================
 echo   POS Printer 업데이트 진행 중...
@@ -223,10 +200,9 @@ if not errorlevel 1 (
 echo 프로그램이 종료되었습니다.
 echo.
 
-echo 파일을 교체합니다...
-ren "{current_exe.name}" "{current_exe.name}.old"
-copy /Y "{new_exe_path}" "{current_exe}"
-echo 파일 교체 완료.
+echo 새 파일로 교체합니다 (Robocopy 사용)...
+robocopy "{source_dir}" "{current_dir}" /E /PURGE /NP /NFL /NDL /NJH /NJS > nul
+echo 파일 교체가 완료되었습니다.
 echo.
 
 echo 새 버전을 실행합니다...
@@ -235,9 +211,9 @@ start "" "{current_exe}"
 echo.
 echo 임시 파일을 정리합니다...
 (
-    timeout /t 5 /nobreak > nul && 
-    del "{current_exe.name}.old" > nul &&
-    del "{updater_bat_path.name}" > nul
+    timeout /t 3 /nobreak > nul &&
+    rd /s /q "{temp_dir}" &&
+    del "{updater_bat_path}"
 )
 """
             
@@ -245,16 +221,11 @@ echo 임시 파일을 정리합니다...
                 f.write(batch_content)
                 
             self.logger.info("업데이트 배치 파일 생성 완료. 프로그램을 종료하고 업데이트를 시작합니다.")
-            
-            # 생성된 배치 파일을 새 창에서 실행
             os.startfile(updater_bat_path)
-            
-            # 현재 프로그램 종료 (배치 파일이 이어받아 처리)
             sys.exit(0)
 
         except Exception as e:
             self.logger.error(f"업데이트 적용 실패: {e}")
-            # 실패 시 백업 복원 시도 (필요 시 구현)
             return False
     
     def _safe_remove_tree(self, path: Path):
