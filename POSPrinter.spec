@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-
+from PyInstaller.utils.hooks import collect_data_files
 
 a = Analysis(
     ['main.py'],
@@ -9,8 +9,7 @@ a = Analysis(
         ('src', 'src'), 
         ('printer_config.json', '.'), 
         ('version.json', '.'),
-        ('venv\\Lib\\site-packages\\escpos\\capabilities.json', 'escpos')
-    ],
+    ] + collect_data_files('escpos'),
     hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui', 'websockets', 'requests', 'python_escpos', 'psutil', 'pyusb', 'serial', 'escpos', 'escpos.capabilities', 'python-dotenv', 'dotenv', 'zoneinfo', 'pathlib', 'threading', 'signal', 'atexit', 'json', 'datetime', 'timedelta', 'src.utils'],
     hookspath=[],
     hooksconfig={},
