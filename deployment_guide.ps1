@@ -139,6 +139,12 @@ foreach ($file in $docFiles) {
     }
 }
 
+# Copy installation batch file
+if (Test-Path "간편설치.bat") {
+    Copy-Item "간편설치.bat" $OutputPath -Force
+    Write-ColorOutput "간편설치.bat copied" "Green"
+}
+
 # Create installer script
 Write-ColorOutput "Creating installer script..." "Yellow"
 $installerScript = @"
