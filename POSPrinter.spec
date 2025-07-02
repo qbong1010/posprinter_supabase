@@ -11,11 +11,15 @@ a = Analysis(
         ('version.json', '.'),
         ('libusb-1.0.dll', '.'),
     ] + collect_data_files('escpos'),
-    hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui', 'websockets', 'requests', 'escpos', 'psutil', 'serial', 'escpos.capabilities', 'dotenv', 'src.utils'],
+    hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui', 'websockets', 'requests', 'escpos', 'psutil', 'serial', 'escpos.capabilities', 'dotenv', 'src.utils', 'usb.core', 'usb.backend', 'usb.util', 'usb.backend.libusb1'],
     hookspath=[],
-    hooksconfig={},
+    hooksconfig={
+        'usb': {
+            'backends': ['libusb1']
+        }
+    },
     runtime_hooks=[],
-    excludes=['usb.core', 'usb.backend', 'usb.util'],
+    excludes=[],
     noarchive=False,
     optimize=0,
 )
