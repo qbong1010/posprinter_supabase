@@ -6,6 +6,7 @@ import shutil
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+import sys
 
 class AutoUpdater:
     def __init__(self, github_repo: str, current_version: str):
@@ -19,6 +20,7 @@ class AutoUpdater:
         self.github_repo = github_repo
         self.current_version = current_version
         self.api_url = f"https://api.github.com/repos/{github_repo}"
+        self.latest_version: Optional[str] = None
         
         # 업데이트 로거 설정
         self.logger = logging.getLogger("updater")
@@ -47,6 +49,7 @@ class AutoUpdater:
             
             if self._is_newer_version(latest_version, self.current_version):
                 self.logger.info("새로운 업데이트가 있습니다.")
+                self.latest_version = latest_version
                 return latest_release
             else:
                 self.logger.info("최신 버전을 사용 중입니다.")
@@ -102,8 +105,14 @@ class AutoUpdater:
             
             self.logger.info(f"업데이트 다운로드 중: {download_url}")
             
+            # 실행 파일 위치를 기준으로 임시 폴더 경로 결정
+            if getattr(sys, 'frozen', False):
+                base_path = Path(sys.executable).parent
+            else:
+                base_path = Path(__file__).resolve().parent.parent
+
             # 임시 디렉토리에 다운로드
-            temp_dir = Path("temp_update")
+            temp_dir = base_path / "temp_update"
             temp_dir.mkdir(exist_ok=True)
             download_path = temp_dir / filename
             
@@ -123,102 +132,129 @@ class AutoUpdater:
     
     def apply_update(self, zip_path: str, backup: bool = True) -> bool:
         """
-        업데이트 적용
+        업데이트 적용 (실행 파일 교체 방식)
+        
+        1. 임시 폴더에 압축 해제
+        2. 업데이트용 배치 파일 생성
+        3. 배치 파일 실행하여 현재 프로세스 종료 및 파일 교체
         
         Args:
             zip_path: 다운로드된 ZIP 파일 경로
-            backup: 백업 생성 여부
+            backup: 백업 생성 여부 (이 방식에서는 미사용)
             
         Returns:
-            성공 여부
+            성공 시 배치파일 실행, 실패 시 False
         """
         try:
-            current_dir = Path.cwd()
-            temp_dir = Path("temp_update")
-            backup_dir = Path("backup")
+            # 실행 파일 위치를 기준으로 모든 경로를 결정
+            if not getattr(sys, 'frozen', False):
+                self.logger.error("이 업데이트 방식은 빌드된 실행 파일에서만 사용 가능합니다.")
+                return False
+
+            current_dir = Path(sys.executable).parent
+            current_exe = Path(sys.executable)
             
-            # 백업 생성
-            if backup:
-                self.logger.info("현재 버전 백업 중...")
-                if backup_dir.exists():
-                    self._safe_remove_tree(backup_dir)
-                backup_dir.mkdir()
-                
-                # 중요 파일들 백업 (캐시 폴더 제외)
-                important_files = ["main.py", "src", "requirements.txt", "printer_config.json"]
-                for file_name in important_files:
-                    file_path = current_dir / file_name
-                    if file_path.exists():
-                        try:
-                            if file_path.is_dir():
-                                self._safe_copy_tree(file_path, backup_dir / file_name)
-                            else:
-                                shutil.copy2(file_path, backup_dir / file_name)
-                        except Exception as e:
-                            self.logger.warning(f"백업 중 파일 건너뜀: {file_name} - {e}")
+            temp_dir = current_dir / "temp_update"
+            extract_dir = temp_dir / "extracted"
+            
+            # 이전 압축 해제 폴더 정리
+            if extract_dir.exists():
+                self._safe_remove_tree(extract_dir)
+            extract_dir.mkdir(parents=True, exist_ok=True)
             
             # ZIP 파일 압축 해제
             self.logger.info("업데이트 파일 압축 해제 중...")
-            extract_dir = temp_dir / "extracted"
-            if extract_dir.exists():
-                self._safe_remove_tree(extract_dir)
-            extract_dir.mkdir()
-            
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_dir)
             
-            # 압축 해제된 폴더 찾기
-            extracted_contents = list(extract_dir.iterdir())
-            if len(extracted_contents) == 1 and extracted_contents[0].is_dir():
-                source_dir = extracted_contents[0]
-            else:
-                source_dir = extract_dir
+            # 압축 해제된 폴더에서 새 실행 파일 찾기
+            # GitHub Release는 종종 repo-name-tag 폴더 안에 소스를 넣음
+            new_exe_path = None
+            possible_exe_names = [current_exe.name, "POSPrinter.exe"]
             
-            # 파일 업데이트 (캐시 폴더 제외)
-            self.logger.info("파일 업데이트 중...")
-            update_files = ["main.py", "src", "requirements.txt"]
+            # 최상위 디렉토리에서 먼저 찾아보기
+            for name in possible_exe_names:
+                if (extract_dir / name).exists():
+                    new_exe_path = extract_dir / name
+                    break
             
-            for file_name in update_files:
-                source_path = source_dir / file_name
-                dest_path = current_dir / file_name
+            # 하위 디렉토리에서도 찾아보기 (GitHub 소스코드 zip 대비)
+            if not new_exe_path:
+                for root, _, files in os.walk(extract_dir):
+                    for file in files:
+                        if file in possible_exe_names:
+                            new_exe_path = Path(root) / file
+                            break
+                    if new_exe_path:
+                        break
+
+            if not new_exe_path:
+                self.logger.error("압축 파일에서 새 실행 파일을 찾을 수 없습니다.")
+                return False
+
+            self.logger.info(f"새 실행 파일 위치: {new_exe_path}")
+
+            # 업데이트용 배치 파일 생성
+            updater_bat_path = current_dir / "update_runner.bat"
+            
+            # 실행중인 프로세스 ID 가져오기
+            pid = os.getpid()
+
+            # 배치 스크립트 내용
+            # 1. 원본 프로세스가 종료될 때까지 대기 (taskkill이 즉시 종료되지 않을 수 있음)
+            # 2. 기존 실행 파일을 .old로 이름 변경 (삭제 실패 대비)
+            # 3. 새 실행 파일을 현재 위치로 복사
+            # 4. 새 프로그램 실행
+            # 5. 임시 파일(.old, .bat) 삭제 스크립트 실행 후 자신도 삭제
+            batch_content = f"""@echo off
+echo.
+echo ===================================
+echo   POS Printer 업데이트 진행 중...
+echo ===================================
+echo.
+echo 이전 프로그램을 종료합니다 (PID: {pid})...
+taskkill /PID {pid} /F > nul
+:wait_loop
+tasklist /FI "PID eq {pid}" | find "{pid}" > nul
+if not errorlevel 1 (
+    timeout /t 1 /nobreak > nul
+    goto wait_loop
+)
+echo 프로그램이 종료되었습니다.
+echo.
+
+echo 파일을 교체합니다...
+ren "{current_exe.name}" "{current_exe.name}.old"
+copy /Y "{new_exe_path}" "{current_exe}"
+echo 파일 교체 완료.
+echo.
+
+echo 새 버전을 실행합니다...
+start "" "{current_exe}"
+
+echo.
+echo 임시 파일을 정리합니다...
+(
+    timeout /t 5 /nobreak > nul && 
+    del "{current_exe.name}.old" > nul &&
+    del "{updater_bat_path.name}" > nul
+)
+"""
+            
+            with open(updater_bat_path, 'w', encoding='utf-8') as f:
+                f.write(batch_content)
                 
-                if source_path.exists():
-                    try:
-                        if dest_path.exists():
-                            if dest_path.is_dir():
-                                self._safe_remove_tree(dest_path)
-                            else:
-                                dest_path.unlink()
-                        
-                        if source_path.is_dir():
-                            self._safe_copy_tree(source_path, dest_path)
-                        else:
-                            shutil.copy2(source_path, dest_path)
-                        
-                        self.logger.info(f"업데이트됨: {file_name}")
-                    except Exception as e:
-                        self.logger.warning(f"파일 업데이트 중 오류 (건너뜀): {file_name} - {e}")
+            self.logger.info("업데이트 배치 파일 생성 완료. 프로그램을 종료하고 업데이트를 시작합니다.")
             
-            # 버전 정보 업데이트
-            self._update_version_info()
+            # 생성된 배치 파일을 새 창에서 실행
+            os.startfile(updater_bat_path)
             
-            # 정리
-            self._safe_remove_tree(temp_dir)
-            
-            self.logger.info("업데이트가 성공적으로 완료되었습니다.")
-            return True
-            
+            # 현재 프로그램 종료 (배치 파일이 이어받아 처리)
+            sys.exit(0)
+
         except Exception as e:
             self.logger.error(f"업데이트 적용 실패: {e}")
-            
-            # 백업에서 복원 시도
-            if backup and backup_dir.exists():
-                try:
-                    self.logger.info("백업에서 복원 중...")
-                    self._restore_from_backup(backup_dir)
-                except Exception as restore_error:
-                    self.logger.error(f"백업 복원 실패: {restore_error}")
-            
+            # 실패 시 백업 복원 시도 (필요 시 구현)
             return False
     
     def _safe_remove_tree(self, path: Path):
@@ -300,10 +336,22 @@ class AutoUpdater:
     def _update_version_info(self):
         """버전 정보 파일 업데이트"""
         try:
-            version_file = Path("version.json")
+            if not self.latest_version:
+                self.logger.warning("최신 버전 정보가 없어 version.json 업데이트를 건너뜁니다.")
+                return
+
+            # 실행 파일 위치를 기준으로 경로 결정
+            if getattr(sys, 'frozen', False):
+                base_path = Path(sys.executable).parent
+            else:
+                base_path = Path(__file__).resolve().parent.parent
+
+            version_file = base_path / "version.json"
+            app_log_path = base_path / "app.log"
+
             version_info = {
-                "version": self.current_version,
-                "updated_at": str(Path("app.log").stat().st_mtime if Path("app.log").exists() else 0)
+                "version": self.latest_version,
+                "updated_at": str(app_log_path.stat().st_mtime if app_log_path.exists() else 0)
             }
             
             with open(version_file, 'w', encoding='utf-8') as f:
@@ -315,12 +363,22 @@ class AutoUpdater:
 def get_current_version() -> str:
     """현재 프로그램 버전 가져오기"""
     try:
-        version_file = Path("version.json")
+        # PyInstaller로 빌드되었을 때와 일반 실행 환경 모두 지원
+        if getattr(sys, 'frozen', False):
+            # 빌드된 .exe 파일의 경로
+            base_path = Path(sys.executable).parent
+        else:
+            # 일반 .py 실행 환경의 경로
+            base_path = Path(__file__).resolve().parent.parent
+
+        version_file = base_path / "version.json"
+        
         if version_file.exists():
             with open(version_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 return data.get("version", "1.0.0")
-    except:
+    except Exception:
+        # 오류 발생 시 기본 버전 반환 (예: 파일 권한 문제)
         pass
     
     return "1.0.0"

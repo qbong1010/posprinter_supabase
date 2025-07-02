@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "build_date": "2024-12-28",
+  "description": "POS 프린터 소프트웨어 - 초기 릴리즈",
+  "build_type": "Release",
+  "features": [
+    "Supabase 데이터베이스 연동",
+    "실시간 주문 처리",
+    "다중 프린터 지원",
+    "자동 업데이트 시스템",
+    "직관적인 GUI",
+    "원클릭 설치 시스템"
+  ],
+  "requirements": {
+    "python": "3.8+",
+    "os": "Windows 10+",
+    "ram": "4GB",
+    "storage": "2GB"
+  }
+} 
