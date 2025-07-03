@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 import sys
+from datetime import datetime
 
 class AutoUpdater:
     def __init__(self, github_repo: str, current_version: str):
@@ -190,19 +191,39 @@ echo   POS Printer 업데이트 진행 중...
 echo ===================================
 echo.
 echo 이전 프로그램을 종료합니다 (PID: {pid})...
-taskkill /PID {pid} /F > nul
-:wait_loop
-tasklist /FI "PID eq {pid}" | find "{pid}" > nul
-if not errorlevel 1 (
-    timeout /t 1 /nobreak > nul
-    goto wait_loop
+:: 프로세스 종료 시도
+taskkill /PID {pid} /F 2>nul
+if errorlevel 1 (
+    echo 프로세스가 이미 종료되었거나 찾을 수 없습니다.
+) else (
+    echo 프로세스 종료 명령을 실행했습니다.
 )
+
+:: 프로세스가 완전히 종료될 때까지 대기 (최대 10초)
+set /a counter=0
+:wait_loop
+if %counter% geq 10 goto continue_update
+tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
+if errorlevel 1 goto continue_update
+timeout /t 1 /nobreak >nul
+set /a counter=%counter%+1
+goto wait_loop
+
+:continue_update
 echo 프로그램이 종료되었습니다.
 echo.
 
 echo 새 파일로 교체합니다 (Robocopy 사용)...
-robocopy "{source_dir}" "{current_dir}" /E /PURGE /NP /NFL /NDL /NJH /NJS > nul
-echo 파일 교체가 완료되었습니다.
+robocopy "{source_dir}" "{current_dir}" /E /PURGE /NP /NFL /NDL /NJH /NJS >nul
+if errorlevel 8 (
+    echo 파일 교체 중 일부 오류가 발생했지만 계속 진행합니다.
+) else (
+    echo 파일 교체가 완료되었습니다.
+)
+
+echo 버전 정보를 업데이트합니다...
+echo {{"build_date": "{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "description": "POS Printer Software", "build_type": "Release", "version": "{self.latest_version}"}} > "{current_dir}\\version.json"
+echo 버전 정보가 업데이트되었습니다.
 echo.
 
 echo 새 버전을 실행합니다...
@@ -211,10 +232,10 @@ start "" "{current_exe}"
 echo.
 echo 임시 파일을 정리합니다...
 (
-    timeout /t 3 /nobreak > nul &&
-    rd /s /q "{temp_dir}" &&
-    del "{updater_bat_path}"
-)
+    timeout /t 3 /nobreak >nul &&
+    rd /s /q "{temp_dir}" 2>nul &&
+    del "{updater_bat_path}" 2>nul
+) >nul 2>&1
 """
             
             with open(updater_bat_path, 'w', encoding='utf-8') as f:
@@ -318,15 +339,29 @@ echo 임시 파일을 정리합니다...
                 base_path = Path(__file__).resolve().parent.parent
 
             version_file = base_path / "version.json"
-            app_log_path = base_path / "app.log"
-
+            
+            # 기존 version.json 내용을 읽어서 버전만 업데이트
             version_info = {
-                "version": self.latest_version,
-                "updated_at": str(app_log_path.stat().st_mtime if app_log_path.exists() else 0)
+                "build_date": "",
+                "description": "POS Printer Software",
+                "build_type": "Release",
+                "version": self.latest_version
             }
             
+            # 기존 파일이 있으면 다른 정보는 보존
+            if version_file.exists():
+                try:
+                    with open(version_file, 'r', encoding='utf-8') as f:
+                        existing_info = json.load(f)
+                        version_info.update(existing_info)
+                        version_info["version"] = self.latest_version  # 버전만 강제 업데이트
+                except Exception:
+                    pass  # 기존 파일 읽기 실패 시 새로운 정보 사용
+            
             with open(version_file, 'w', encoding='utf-8') as f:
-                json.dump(version_info, f, indent=2, ensure_ascii=False)
+                json.dump(version_info, f, indent=4, ensure_ascii=False)
+                
+            self.logger.info(f"버전 정보가 {self.latest_version}로 업데이트되었습니다.")
                 
         except Exception as e:
             self.logger.warning(f"버전 정보 업데이트 실패: {e}")

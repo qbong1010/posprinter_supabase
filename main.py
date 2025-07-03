@@ -68,12 +68,22 @@ def save_last_update_check():
 def get_current_version():
     """현재 앱 버전을 가져옵니다."""
     try:
-        version_file = resource_path("version.json") # 읽기 전용 파일
+        # PyInstaller로 빌드되었을 때와 일반 실행 환경 모두 지원
+        if getattr(sys, 'frozen', False):
+            # 빌드된 .exe 파일의 경로
+            base_path = Path(sys.executable).parent
+        else:
+            # 일반 .py 실행 환경의 경로
+            base_path = Path(__file__).resolve().parent
+
+        version_file = base_path / "version.json"
+        
         if version_file.exists():
             with open(version_file, 'r', encoding='utf-8') as f:
                 version_info = json.load(f)
                 return version_info.get('version', '1.0.0')
     except Exception:
+        # 오류 발생 시 기본 버전 반환 (예: 파일 권한 문제)
         pass
     return '1.0.0'
 
