@@ -108,7 +108,8 @@ if (Test-Path $distPath) {
 # Copy additional files
 $configFiles = @(
     "printer_config.json",
-    "requirements.txt"
+    "requirements.txt",
+    "default.env"
 )
 
 foreach ($file in $configFiles) {
