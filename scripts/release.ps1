@@ -64,7 +64,7 @@ Write-Success "version.json updated successfully"
 # 3. Execute build
 Write-Step "Building application..."
 try {
-    .\deployment_guide.ps1 -Version $Version -OutputPath ".\release"
+    .\scripts\deployment_guide.ps1 -Version $Version -OutputPath ".\release"
     Write-Success "Build completed"
 } catch {
     Write-Error "Build failed: $_"
