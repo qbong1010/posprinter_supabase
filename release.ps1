@@ -102,7 +102,7 @@ $Message
 ### Installation
 1. Download the attached ZIP file
 2. Extract the contents  
-3. Run ``간편설치.bat`` as administrator
+3. Run ``easy_install.bat`` as administrator
 
 ### Update Instructions
 - Existing users: Click 'Check for Updates' button in the application
