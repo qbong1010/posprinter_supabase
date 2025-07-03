@@ -36,7 +36,7 @@ jobs:
     - name: Build application
       shell: powershell
       run: |
-        .\build_clean.ps1 -Version "$env:VERSION" -OutputPath ".\release"
+        .\scripts\deployment_guide.ps1 -Version "$env:VERSION" -OutputPath ".\release"
         
     - name: Create release archive
       shell: powershell
