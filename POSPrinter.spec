@@ -10,6 +10,7 @@ a = Analysis(
         ('printer_config.json', '.'), 
         ('version.json', '.'),
         ('libusb-1.0.dll', '.'),
+        ('default.env','.'),
     ] + collect_data_files('escpos'),
     hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui', 'websockets', 'requests', 'escpos', 'psutil', 'serial', 'escpos.capabilities', 'dotenv', 'src.utils', 'usb.core', 'usb.backend', 'usb.util', 'usb.backend.libusb1'],
     hookspath=[],
