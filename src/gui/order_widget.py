@@ -22,6 +22,7 @@ from src.database.cache import SupabaseCache
 from src.error_logger import get_error_logger
 
 from src.printer.manager import PrinterManager
+from src.gui.monitoring_factory import create_optimized_order_monitor
 
 # 주문 상태 Enum
 class OrderStatus:
@@ -39,11 +40,9 @@ class OrderWidget(QWidget):
         self.setup_ui()
         self.orders = []
 
-        # 주문 갱신을 위한 단일 타이머
-        self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self.check_for_updates)
-        self.update_timer.start(5000)
-
+        # 최적화된 모니터링 시스템 생성
+        self.order_monitor = create_optimized_order_monitor(self, supabase_config, db_config)
+        
         # 메시지 표시를 위한 타이머
         self.message_timer = QTimer()
         self.message_timer.setSingleShot(True)
@@ -54,6 +53,10 @@ class OrderWidget(QWidget):
         
         # 프로그램 시작 후 체크박스 상태 동기화
         self.sync_auto_print_checkbox()
+        
+        # 최적화된 모니터링 시작
+        if self.order_monitor:
+            self.order_monitor.start_monitoring()
         
     def setup_ui(self):
         # 메인 레이아웃
@@ -196,6 +199,10 @@ class OrderWidget(QWidget):
             
             save_success = self.printer_manager.set_auto_print_config(config)
             logging.info(f"설정 저장 결과: {save_success}")
+            
+            # 모니터링 시스템의 자동출력 모드 조정
+            if hasattr(self.order_monitor, 'set_auto_print_mode'):
+                self.order_monitor.set_auto_print_mode(enabled)
             
             # 설정 저장 후 다시 확인
             updated_config = self.printer_manager.get_auto_print_config()
@@ -908,3 +915,12 @@ class OrderWidget(QWidget):
                 error_logger.log_error(e, "주문 취소 오류", {"context": "cancel_order", "order_id": str(order_id) if 'order_id' in locals() else "unknown"})
         finally:
             self.set_loading_state(False)
+
+    def closeEvent(self, event):
+        """위젯이 닫힐 때 모니터링 시스템 중지"""
+        try:
+            if self.order_monitor:
+                self.order_monitor.stop_monitoring()
+        except Exception as e:
+            logging.error(f"모니터링 시스템 종료 오류: {e}")
+        super().closeEvent(event)

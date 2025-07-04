@@ -1,0 +1,34 @@
+{
+  "monitoring": {
+    "method": "smart_polling",
+    "realtime_enabled": false,
+    "polling_config": {
+      "base_interval": 10,
+      "fast_interval": 3,
+      "slow_interval": 30,
+      "auto_print_fast_mode": true
+    },
+    "realtime_config": {
+      "enable_websocket": true,
+      "reconnect_interval": 5,
+      "heartbeat_interval": 30
+    },
+    "hybrid_config": {
+      "primary_method": "realtime",
+      "fallback_method": "smart_polling",
+      "fallback_timeout": 10
+    }
+  },
+  "performance": {
+    "max_concurrent_prints": 3,
+    "print_queue_enabled": true,
+    "print_timeout": 30,
+    "ui_update_throttle": 500
+  },
+  "logging": {
+    "log_level": "INFO",
+    "log_monitoring_events": true,
+    "log_print_operations": true,
+    "performance_monitoring": false
+  }
+} 

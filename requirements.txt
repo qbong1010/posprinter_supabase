@@ -9,3 +9,4 @@ python-escpos>=3.0.0
 psutil>=5.9.0
 pyusb>=1.2.1
 pyserial>=3.5
+websocket-client>=1.6.0
