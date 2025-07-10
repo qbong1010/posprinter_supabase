@@ -100,9 +100,15 @@ def print_receipt_esc_usb(order, vendor_id, product_id, interface, codepage=0x13
             )
         return False
 
-    # libusb DLL을 현재 디렉토리에서 로드
+    # libusb DLL을 루트 디렉토리에서 로드
     try:
-        backend = usb.backend.libusb1.get_backend(find_library=lambda x: "./libusb-1.0.dll")
+        # 프로젝트 루트 디렉토리 경로 계산 (현재 파일에서 2단계 위로)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(os.path.dirname(current_dir))
+        libusb_path = os.path.join(root_dir, "libusb-1.0.dll")
+        
+        backend = usb.backend.libusb1.get_backend(find_library=lambda x: libusb_path)
+
     except Exception as e:
         error_msg = f"libusb 백엔드 생성 실패: {e}"
         logger.error(error_msg)
@@ -120,74 +126,82 @@ def print_receipt_esc_usb(order, vendor_id, product_id, interface, codepage=0x13
         logger.error("libusb-1.0.dll을 로드할 수 없습니다. 백엔드 생성 실패.")
         return False
 
+    printer = None
     try:
         # 백엔드를 명시적으로 전달
+        logger.info(f"USB 프린터 연결 시도: vID=0x{vendor_id:04x}, pID=0x{product_id:04x}, interface={interface}")
         printer = Usb(idVendor=vendor_id, idProduct=product_id, interface=interface, backend=backend)
+        logger.info("USB 프린터 객체 생성 성공. 데이터 전송을 시작합니다.")
         
         # 프린터 초기화 및 인코딩 설정
         printer._raw(STYLE_COMMANDS['init'])  # 프린터 초기화
         printer._raw(bytes([0x1b, 0x74, codepage]))  # 코드페이지 설정
         printer.encoding = 'cp949'  # python-escpos의 인코딩 속성 지정
 
-        try:
-            # 영수증 텍스트를 CP949로 직접 인코딩하여 바이트로 전송
-            lines = receipt_text.split('\n')
-            
-            # 디버깅을 위한 로그 추가
-            logger.info(f"영수증 총 줄 수: {len(lines)}")
-            logger.debug(f"영수증 전체 텍스트:\n{receipt_text}")
-            
-            for i, line in enumerate(lines):
-                # 빈 줄 처리
-                if not line.strip():
-                    printer._raw(STYLE_COMMANDS['crlf'])
-                    time.sleep(0.01)  # 10ms 지연
-                    continue
-                    
-                logger.debug(f"처리 중인 줄 {i+1}: {line}")
+        # 영수증 텍스트를 CP949로 직접 인코딩하여 바이트로 전송
+        lines = receipt_text.split('\n')
+        
+        # 디버깅을 위한 로그 추가
+        logger.info(f"영수증 총 줄 수: {len(lines)}")
+        logger.debug(f"영수증 전체 텍스트:\n{receipt_text}")
+        
+        for i, line in enumerate(lines):
+            # 빈 줄 처리
+            if not line.strip():
+                printer._raw(STYLE_COMMANDS['crlf'])
+                time.sleep(0.01)  # 10ms 지연
+                continue
                 
-                if '주문번호' in line:
-                    printer._raw(STYLE_COMMANDS['center'])  # 가운데 정렬
-                    time.sleep(0.01)
-                    printer._raw(STYLE_COMMANDS['text_2x'])  # 글자 크기 2배
-                    time.sleep(0.01)
-                    printer._raw(line.encode('cp949', errors='strict'))
-                    printer._raw(STYLE_COMMANDS['crlf'])  # CR+LF로 줄바꿈
-                    time.sleep(0.02)  # 큰 텍스트는 조금 더 기다림
-                    printer._raw(STYLE_COMMANDS['text_normal'])  # 기본 글자 크기
-                    time.sleep(0.01)
-                    printer._raw(STYLE_COMMANDS['left'])  # 왼쪽 정렬
-                    time.sleep(0.01)
-                else:
-                    printer._raw(line.encode('cp949', errors='strict'))
-                    printer._raw(STYLE_COMMANDS['crlf'])  # CR+LF로 줄바꿈
-                    time.sleep(0.01)  # 10ms 지연
+            logger.debug(f"처리 중인 줄 {i+1}: {line}")
             
-            # 추가 줄바꿈으로 여백 확보
-            printer._raw(STYLE_COMMANDS['crlf'])
-            time.sleep(0.02)
-            printer._raw(STYLE_COMMANDS['crlf'])
-            time.sleep(0.02)
-            
-            # 용지 자르기 전에 충분한 시간 대기
-            time.sleep(0.1)
-            printer._raw(STYLE_COMMANDS['cut'])  # 용지 자르기
-            time.sleep(0.05)  # 자르기 완료 대기
-        except UnicodeEncodeError as e:
-            logger.error(f"텍스트 인코딩 중 오류 발생: {e}")
-            logger.error(f"인코딩 실패한 텍스트: {receipt_text}")
-            return False
-        finally:
-            printer.close()  # 명시적으로 닫기
+            if '주문번호' in line:
+                printer._raw(STYLE_COMMANDS['center'])  # 가운데 정렬
+                time.sleep(0.01)
+                printer._raw(STYLE_COMMANDS['text_2x'])  # 글자 크기 2배
+                time.sleep(0.01)
+                printer._raw(line.encode('cp949', errors='strict'))
+                printer._raw(STYLE_COMMANDS['crlf'])  # CR+LF로 줄바꿈
+                time.sleep(0.02)  # 큰 텍스트는 조금 더 기다림
+                printer._raw(STYLE_COMMANDS['text_normal'])  # 기본 글자 크기
+                time.sleep(0.01)
+                printer._raw(STYLE_COMMANDS['left'])  # 왼쪽 정렬
+                time.sleep(0.01)
+            else:
+                printer._raw(line.encode('cp949', errors='strict'))
+                printer._raw(STYLE_COMMANDS['crlf'])  # CR+LF로 줄바꿈
+                time.sleep(0.01)  # 10ms 지연
+        
+        # 추가 줄바꿈으로 여백 확보
+        printer._raw(STYLE_COMMANDS['crlf'])
+        time.sleep(0.02)
+        printer._raw(STYLE_COMMANDS['crlf'])
+        time.sleep(0.02)
+        
+        # 용지 자르기 전에 충분한 시간 대기
+        time.sleep(0.1)
+        printer._raw(STYLE_COMMANDS['cut'])  # 용지 자르기
+        time.sleep(0.05)  # 자르기 완료 대기
 
         logger.info(f"USB 프린터(vID={vendor_id:04x}, pID={product_id:04x})로 영수증 전송 완료")
         return True
 
+    except UnicodeEncodeError as e:
+        logger.error(f"텍스트 인코딩 중 오류 발생: {e}", exc_info=True)
+        logger.error(f"인코딩 실패한 텍스트: {receipt_text}")
+        return False
     except PermissionError as e:
-        logger.error(f"USB 접근 권한이 없습니다: {e}")
+        logger.error(f"USB 접근 권한이 없습니다: {e}", exc_info=True)
     except usb.core.USBError as e:
-        logger.error(f"USB 통신 오류: {e}")
+        logger.error(f"USB 통신 오류. VID/PID, 드라이버(Zadig) 또는 다른 프로그램의 점유 상태를 확인하세요: {e}", exc_info=True)
     except Exception as e:
-        logger.error(f"USB 프린터 출력 중 알 수 없는 오류 발생: {e}")
+        logger.error(f"USB 프린터 출력 중 알 수 없는 오류 발생: {e}", exc_info=True)
+        return False
+    finally:
+        if printer:
+            try:
+                printer.close()
+                logger.info("프린터 연결을 닫았습니다.")
+            except Exception as close_e:
+                logger.error(f"프린터 연결을 닫는 중 오류 발생: {close_e}")
 
     return False
