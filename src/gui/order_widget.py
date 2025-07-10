@@ -425,6 +425,7 @@ class OrderWidget(QWidget):
             # 주문 항목 처리
             for item in order_data.get("items", []):
                 formatted_item = {
+                    "order_item_id": item.get("order_item_id"),
                     "name": item.get("name", "N/A"),
                     "quantity": item.get("quantity", 1),
                     "price": item.get("price", 0),
@@ -560,6 +561,7 @@ class OrderWidget(QWidget):
         # 주문 항목 처리
         for item in order_data.get("items", []):
             formatted_item = {
+                "order_item_id": item.get("order_item_id"),
                 "name": item.get("name", "N/A"),
                 "quantity": item.get("quantity", 1),
                 "price": item.get("price", 0),

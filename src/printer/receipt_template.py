@@ -28,6 +28,7 @@ def format_receipt_string(order: Dict[str, Any]) -> str:
     total = 0
     for item in order.get("items", []):
         name = item.get("name")
+        order_item_id = item.get("order_item_id")
         qty = item.get("quantity", 0)
         price = item.get("price", 0)
 
@@ -37,13 +38,20 @@ def format_receipt_string(order: Dict[str, Any]) -> str:
         item_total = qty * price_per_item
         total += item_total
 
-        lines.append(f"{name}")
+        item_line = f"상품명: {name}"
+        if order_item_id:
+            item_line += f" (ID:{order_item_id})"
+        lines.append(item_line)
+
         for opt in item.get("options", []):
-            opt_line = f"- {opt['name']}"
+            opt_line = f" - 옵션: {opt['name']}"
             if opt.get("price", 0) > 0:
                 opt_line += f" (+{opt['price']:,}원)"
             lines.append(opt_line)
-        lines.append(f"수량: {qty}개 x {price_per_item:,}원 = {item_total:,}원")
+            
+        lines.append(f"수량: {qty}개")
+        lines.append(f"단가: {price_per_item:,}원")
+        lines.append(f"금액: {item_total:,}원")
         lines.append("")  # 아이템 간 빈 줄
 
     lines.append("-" * 32)
