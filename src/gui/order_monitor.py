@@ -1,4 +1,4 @@
-from PySide6.QtCore import QThread, Signal, QTimer, QMutex
+from PySide6.QtCore import QThread, Signal, QTimer, QMutex, QMutexLocker
 from PySide6.QtWidgets import QApplication
 import logging
 import time
@@ -48,7 +48,7 @@ class OrderMonitorThread(QThread):
         
     def set_check_interval(self, interval: int):
         """체크 간격 설정"""
-        with QMutex(self._mutex):
+        with QMutexLocker(self._mutex):
             self.check_interval = max(3, interval)  # 최소 3초
             
     def run(self):
