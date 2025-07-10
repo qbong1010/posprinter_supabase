@@ -23,7 +23,7 @@ def format_receipt_string(order: Dict[str, Any]) -> str:
     lines.append(f"주문유형:  {'매장 식사' if is_dine_in else '포장'}")
     lines.append("")  # 빈 줄
 
-    lines.append("-" * 45)
+    lines.append("-" * 40)
 
     total = 0
     for item in order.get("items", []):

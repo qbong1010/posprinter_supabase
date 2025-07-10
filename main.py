@@ -167,7 +167,7 @@ def signal_handler(signum, frame):
 def main():
     try:
         # .env 파일 로드 (쓰기 가능한 애플리케이션 루트에서 .env 파일을 찾음)
-        dotenv_path = get_app_root() / ".env"
+        dotenv_path = get_app_root() / "default.env"
         if dotenv_path.exists():
             load_dotenv(dotenv_path=dotenv_path)
         else:
