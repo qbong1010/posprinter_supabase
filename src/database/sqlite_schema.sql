@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS order_item_option (
   order_item_option_id INTEGER PRIMARY KEY AUTOINCREMENT,
   order_item_id INTEGER NOT NULL,
   option_item_id INTEGER NOT NULL,
+  quantity INTEGER DEFAULT 1,
+  total_price INTEGER DEFAULT 0,
   FOREIGN KEY (order_item_id) REFERENCES order_item(order_item_id),
   FOREIGN KEY (option_item_id) REFERENCES option_item(option_item_id)
 );

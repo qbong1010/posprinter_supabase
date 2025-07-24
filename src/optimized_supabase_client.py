@@ -42,6 +42,8 @@ class OrderOption:
     option_item_id: int
     option_item_name: str
     option_price: int
+    quantity: int = 1
+    total_price: int = 0
 
 class QueryCache:
     """쿼리 결과 캐싱 클래스"""
@@ -302,6 +304,8 @@ class OptimizedSupabaseClient(QObject):
                 order_item_option_id,
                 order_item_id,
                 option_item_id,
+                quantity,
+                total_price,
                 option_item!inner(option_item_name,option_price)
             """,
             "order_item_id": f"in.({ids_str})"
@@ -324,7 +328,9 @@ class OptimizedSupabaseClient(QObject):
                 order_item_id=order_item_id,
                 option_item_id=item['option_item_id'],
                 option_item_name=option_info.get('option_item_name', 'N/A'),
-                option_price=option_info.get('option_price', 0)
+                option_price=option_info.get('option_price', 0),
+                quantity=item.get('quantity', 1),
+                total_price=item.get('total_price', 0)
             )
             item_options[order_item_id].append(option)
         
@@ -379,7 +385,9 @@ class OptimizedSupabaseClient(QObject):
                         "options": [
                             {
                                 "name": opt.option_item_name,
-                                "price": opt.option_price
+                                "price": opt.option_price,
+                                "quantity": opt.quantity,
+                                "total_price": opt.total_price
                             }
                             for opt in item_options
                         ]

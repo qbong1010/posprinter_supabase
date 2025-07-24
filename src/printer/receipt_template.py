@@ -60,22 +60,27 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
         qty = item.get("quantity", 0)
         price = item.get("price", 0)
 
-        # 옵션 개수 집계 (같은 이름의 옵션을 카운트)
+        # 옵션 개수 집계 및 가격 계산 (total_price 우선 사용)
         options_list = item.get("options", [])
         option_counter = Counter()
         option_prices = {}
         
+        options_price = 0  # 옵션 총 가격
+        
         for opt in options_list:
             opt_name = opt.get("name", "")
             opt_price = opt.get("price", 0)
-            option_counter[opt_name] += 1
+            opt_quantity = opt.get("quantity", 1)  # 데이터베이스의 quantity 값 사용
+            opt_total_price = opt.get("total_price", None)  # 데이터베이스의 total_price 값
+            
+            option_counter[opt_name] += opt_quantity  # quantity 값을 직접 더함
             option_prices[opt_name] = opt_price
-
-        # 옵션 총 가격 계산 (각 옵션의 개수 × 가격)
-        options_price = sum(
-            option_counter[opt_name] * opt_price 
-            for opt_name, opt_price in option_prices.items()
-        )
+            
+            # total_price가 있으면 사용, 없으면 단가 × 수량으로 계산
+            if opt_total_price is not None and opt_total_price > 0:
+                options_price += opt_total_price
+            else:
+                options_price += opt_price * opt_quantity
         
         price_per_item = price + options_price  # 옵션 포함 개당 가격
         item_total = qty * price_per_item
@@ -93,11 +98,25 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
             for opt_name, count in option_counter.items():
                 opt_price = option_prices[opt_name]
                 
-                # 항상 개수를 표시하는 새로운 형태
-                if opt_price > 1:
-                    lines.append(f"  - {opt_name}X{count}(+{opt_price:,}원) ")
+                # 해당 옵션의 total_price 찾기
+                opt_total_price = None
+                for opt in options_list:
+                    if opt.get("name") == opt_name:
+                        opt_total_price = opt.get("total_price")
+                        break
+                
+                # total_price가 있으면 사용, 없으면 단가 표시
+                if opt_total_price is not None and opt_total_price > 0:
+                    if count > 1:
+                        lines.append(f"  - {opt_name}X{count}(+{opt_total_price:,}원)")
+                    else:
+                        lines.append(f"  - {opt_name}(+{opt_total_price:,}원)")
                 else:
-                    lines.append(f"  - {opt_name}")
+                    # 기존 로직 유지
+                    if opt_price > 0:
+                        lines.append(f"  - {opt_name}X{count}(+{opt_price:,}원)")
+                    else:
+                        lines.append(f"  - {opt_name}")
             
         lines.append(f"수량: {qty}개")
         lines.append(f"단가 (옵션포함): {price_per_item:,}원")

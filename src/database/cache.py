@@ -86,6 +86,22 @@ class SupabaseCache:
                 logger.info("last_print_attempt 컬럼이 추가되었습니다.")
             except sqlite3.Error:
                 pass  # 이미 존재하는 경우
+                
+            # order_item_option 테이블에 quantity 컬럼 추가 (마이그레이션)
+            try:
+                conn.execute("ALTER TABLE order_item_option ADD COLUMN quantity INTEGER DEFAULT 1")
+                conn.commit()
+                logger.info("order_item_option.quantity 컬럼이 추가되었습니다.")
+            except sqlite3.Error:
+                pass  # 이미 존재하는 경우
+                
+            # order_item_option 테이블에 total_price 컬럼 추가 (마이그레이션)
+            try:
+                conn.execute("ALTER TABLE order_item_option ADD COLUMN total_price INTEGER DEFAULT 0")
+                conn.commit()
+                logger.info("order_item_option.total_price 컬럼이 추가되었습니다.")
+            except sqlite3.Error:
+                pass  # 이미 존재하는 경우
             
         except Exception as e:
             logger.error(f"데이터베이스 초기화 오류: {e}")
@@ -155,7 +171,7 @@ class SupabaseCache:
                c.company_name, c.required_signature,
                oi.order_item_id, oi.quantity, oi.item_price,
                mi.menu_name,
-               opt.option_item_name, opt.option_price
+               opt.option_item_name, opt.option_price, oio.quantity as option_quantity, oio.total_price as option_total_price
         FROM "order" o
         JOIN company c ON c.company_id = o.company_id
         LEFT JOIN order_item oi ON oi.order_id = o.order_id
@@ -195,7 +211,12 @@ class SupabaseCache:
                 }
             if row["option_item_name"]:
                 item_map[item_id]["options"].append(
-                    {"name": row["option_item_name"], "price": row["option_price"]}
+                    {
+                        "name": row["option_item_name"], 
+                        "price": row["option_price"],
+                        "quantity": row["option_quantity"] or 1,
+                        "total_price": row["option_total_price"] or 0
+                    }
                 )
         order["items"] = list(item_map.values())
         return order

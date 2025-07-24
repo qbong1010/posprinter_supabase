@@ -78,6 +78,8 @@ CREATE TABLE public.order_item_option (
   order_item_option_id integer NOT NULL DEFAULT nextval('order_item_option_order_item_option_id_seq'::regclass),
   order_item_id integer NOT NULL,
   option_item_id integer NOT NULL,
+  quantity integer DEFAULT 1,
+  total_price integer DEFAULT 0,
   CONSTRAINT order_item_option_pkey PRIMARY KEY (order_item_option_id),
   CONSTRAINT order_item_option_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES public.order_item(order_item_id),
   CONSTRAINT order_item_option_option_item_id_fkey FOREIGN KEY (option_item_id) REFERENCES public.option_item(option_item_id)
