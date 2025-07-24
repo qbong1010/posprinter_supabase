@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Common receipt printing utilities."""
 from typing import Any, Dict
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from collections import Counter
 
 def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer") -> str:
@@ -23,10 +24,16 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
     created_at = order.get('created_at', '')
     is_dine_in = order.get('is_dine_in', True)
 
-    # 주문일시 포맷팅
+    # 주문일시 포맷팅 (UTC -> KST)
     if created_at:
-        created_at_dt = datetime.fromisoformat(created_at)  # ISO 형식의 문자열을 datetime으로 변환
-        formatted_created_at = created_at_dt.strftime('%Y-%m-%d %H:%M')  # 원하는 형식으로 포맷팅
+        try:
+            created_at_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            if created_at_dt.tzinfo is None:
+                created_at_dt = created_at_dt.replace(tzinfo=timezone.utc)
+            created_at_dt = created_at_dt.astimezone(ZoneInfo('Asia/Seoul'))
+            formatted_created_at = created_at_dt.strftime('%Y-%m-%d %H:%M')
+        except Exception:
+            formatted_created_at = created_at
     else:
         formatted_created_at = ''
 
@@ -117,7 +124,7 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
         lines.append("감사합니다!")
     lines.append("")  # 빈 줄
 
-    current_time = datetime.now()
+    current_time = datetime.now(ZoneInfo('Asia/Seoul'))
     lines.append(f"출력시간: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")  # 마지막 빈 줄
 

@@ -725,12 +725,16 @@ class OrderWidget(QWidget):
             # 주문일시
             created_at = order_data.get("created_at", "")
             if created_at:
-                # ISO 형식의 날짜를 한국 시간으로 변환하여 표시
-                from datetime import datetime
+                # ISO 형식의 날짜를 한국 시간(KST)으로 변환하여 표시
+                from datetime import datetime, timezone
+                from zoneinfo import ZoneInfo
                 try:
                     dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.astimezone(ZoneInfo("Asia/Seoul"))
                     created_at = dt.strftime("%Y-%m-%d %H:%M:%S")
-                except:
+                except Exception:
                     pass
             self.order_table.setItem(row_position, 7, QTableWidgetItem(created_at))
             
