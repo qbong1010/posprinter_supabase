@@ -94,10 +94,10 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
                 opt_price = option_prices[opt_name]
                 
                 # 항상 개수를 표시하는 새로운 형태
-                if opt_price > 0:
-                    lines.append(f"  - {opt_name}(+{opt_price:,}원) {count}개")
+                if opt_price > 1:
+                    lines.append(f"  - {opt_name}X{count}(+{opt_price:,}원) ")
                 else:
-                    lines.append(f"  - {opt_name} {count}개")
+                    lines.append(f"  - {opt_name}")
             
         lines.append(f"수량: {qty}개")
         lines.append(f"단가 (옵션포함): {price_per_item:,}원")
