@@ -107,16 +107,11 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
     lines.append("-" * 20)
     lines.append(f"총 금액: {total:,}원")
     lines.append("")  # 빈 줄
-    
-    # 주방용은 감사 메시지 대신 주의사항 표시
-    if receipt_type == "kitchen":
-        lines.append("주방 확인용 - 조리 후 보관")
-    else:
-        lines.append("감사합니다!")
+    lines.append("감사합니다!")
     lines.append("")  # 빈 줄
 
     current_time = datetime.now(ZoneInfo('Asia/Seoul'))
-    lines.append(f"출력시간: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"출력시간: {current_time.strftime('%Y-%m-%d %H:%M')}")
     lines.append("")  # 마지막 빈 줄
 
     return "\n".join(lines)
