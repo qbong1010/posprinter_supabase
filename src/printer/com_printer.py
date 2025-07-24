@@ -3,7 +3,7 @@
 import serial
 import logging
 from typing import Dict, Any
-from src.printer.receipt_template import format_receipt_string, format_kitchen_receipt_string
+from src.printer.receipt_template import format_receipt_string
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def print_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3", baudra
             esc_commands = b'\x1b\x40'  # 프린터 초기화
             esc_commands += b'\x1b\x61\x00'  # 왼쪽 정렬
             esc_commands += b'\x1b\x45\x01'  # 볼드체 켜기
-            #esc_commands += b'\x1d\x21\x11'  # 가로/세로 2배 크기
+            esc_commands += b'\x1d\x21\x11'  # 가로/세로 2배 크기
             
             # 제어 명령어 + 영수증 내용 + 용지 컷팅 명령어
             # 출력 후 볼드 및 크기 리셋
@@ -59,7 +59,7 @@ def print_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3", baudra
             ser.write(full_data)
             ser.flush()  # 버퍼 플러시
             
-            logger.info(f"COM 포트 {com_port}로 영수증 출력 완료 (볼드체)")
+            logger.info(f"COM 포트 {com_port}로 영수증 출력 완료 (볼드체, 큰 글자)")
             return True
             
     except serial.SerialException as e:
@@ -122,8 +122,8 @@ def print_kitchen_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3"
     try:
         logger.info(f"주방용 영수증 COM 포트 출력 시작: {com_port}")
         
-        # 주방용 영수증 포맷으로 생성
-        receipt_text = format_kitchen_receipt_string(order_data)
+        # 주방용 영수증 포맷으로 생성 -> 손님용과 동일한 포맷으로 변경
+        receipt_text = format_receipt_string(order_data)
         
         # 시리얼 포트 연결 및 출력
         with serial.Serial(com_port, baudrate, timeout=5) as ser:
@@ -153,10 +153,11 @@ def print_kitchen_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3"
             # 데이터 전송
             ser.write(full_data)
             ser.flush()
+            print(full_data)
             
             logger.info(f"주방용 영수증 COM 포트 {com_port} 출력 완료 (볼드체, 큰 글자)")
             return True
             
     except Exception as e:
         logger.error(f"주방용 영수증 COM 포트 출력 오류 ({com_port}): {e}")
-        return False 
+        return False

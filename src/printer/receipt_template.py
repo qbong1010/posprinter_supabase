@@ -51,7 +51,7 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
     lines.append(f"주문유형:  {'매장 식사' if is_dine_in else '포장'}")
     lines.append("")  # 빈 줄
 
-    lines.append("-" * 40)
+    lines.append("-" * 20)
 
     total = 0
     for item in order.get("items", []):
@@ -92,28 +92,19 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
             lines.append("  [선택된 옵션]")
             for opt_name, count in option_counter.items():
                 opt_price = option_prices[opt_name]
-                opt_total = count * opt_price
                 
-                if count > 1:
-                    if opt_price > 0:
-                        lines.append(f"  - {opt_name} x{count}개 (+{opt_price:,}원 x{count} = +{opt_total:,}원)")
-                    else:
-                        lines.append(f"  - {opt_name} x{count}개")
+                # 항상 개수를 표시하는 새로운 형태
+                if opt_price > 0:
+                    lines.append(f"  - {opt_name}(+{opt_price:,}원) {count}개")
                 else:
-                    if opt_price > 0:
-                        lines.append(f"  - {opt_name} (+{opt_price:,}원)")
-                    else:
-                        lines.append(f"  - {opt_name}")
+                    lines.append(f"  - {opt_name} {count}개")
             
-        lines.append(f"메뉴 기본가격: {price:,}원")
-        if options_price > 0:
-            lines.append(f"옵션 추가금액: +{options_price:,}원")
         lines.append(f"수량: {qty}개")
         lines.append(f"단가 (옵션포함): {price_per_item:,}원")
         lines.append(f"소계: {item_total:,}원")
         lines.append("")  # 아이템 간 빈 줄
 
-    lines.append("-" * 40)
+    lines.append("-" * 20)
     lines.append(f"총 금액: {total:,}원")
     lines.append("")  # 빈 줄
     
