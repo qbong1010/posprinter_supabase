@@ -1,7 +1,7 @@
 {
   "customer_printer": {
     "printer_type": "escpos",
-    "printer_name": "Adobe PDF",
+    "printer_name": "Samsung CLX-6240 Series PS",
     "usb_info": {
       "vendor_id": "0525",
       "product_id": "A700",

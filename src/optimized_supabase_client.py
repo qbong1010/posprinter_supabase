@@ -459,15 +459,26 @@ class OptimizedSupabaseClient(QObject):
     def _delete_order_cascade(self, order_id: int) -> bool:
         """주문 cascade 삭제"""
         try:
-            # 주문 항목 옵션 삭제
-            params = {"order_item_id": f"in.(select order_item_id from order_item where order_id={order_id})"}
-            self._make_request("order_item_option", params, method="DELETE")
+            # 1단계: 해당 주문의 order_item_id들을 먼저 조회
+            order_items_data = self._make_request(
+                "order_item", 
+                {"select": "order_item_id", "order_id": f"eq.{order_id}"}
+            )
             
-            # 주문 항목 삭제
+            if order_items_data:
+                order_item_ids = [str(item["order_item_id"]) for item in order_items_data]
+                
+                # 2단계: 조회된 order_item_id들로 order_item_option 삭제
+                if order_item_ids:
+                    order_item_ids_str = ",".join(order_item_ids)
+                    params = {"order_item_id": f"in.({order_item_ids_str})"}
+                    self._make_request("order_item_option", params, method="DELETE")
+            
+            # 3단계: 주문 항목 삭제
             params = {"order_id": f"eq.{order_id}"}
             self._make_request("order_item", params, method="DELETE")
             
-            # 주문 삭제
+            # 4단계: 주문 삭제
             data = self._make_request("order", params, method="DELETE")
             
             return data is not None

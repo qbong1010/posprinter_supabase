@@ -142,16 +142,34 @@ class SupabaseClient(QObject):
     def delete_order(self, order_id: int) -> bool:
         """특정 주문을 삭제합니다."""
         try:
-            # 주문 항목 옵션 삭제
-            resp = requests.delete(
-                f"{self.base_url}/rest/v1/order_item_option",
+            # 1단계: 해당 주문의 order_item_id들을 먼저 조회
+            resp = requests.get(
+                f"{self.base_url}/rest/v1/order_item",
                 headers=self.headers,
-                params={"order_item_id": f"in.(select order_item_id from order_item where order_id={order_id})"}
+                params={
+                    "select": "order_item_id",
+                    "order_id": f"eq.{order_id}"
+                }
             )
-            if not resp.ok:
-                logger.warning(f"주문 항목 옵션 삭제 응답: {resp.status_code} - {resp.text}")
             
-            # 주문 항목 삭제
+            if resp.ok:
+                order_items = resp.json()
+                order_item_ids = [str(item["order_item_id"]) for item in order_items]
+                
+                # 2단계: 조회된 order_item_id들로 order_item_option 삭제
+                if order_item_ids:
+                    order_item_ids_str = ",".join(order_item_ids)
+                    resp = requests.delete(
+                        f"{self.base_url}/rest/v1/order_item_option",
+                        headers=self.headers,
+                        params={"order_item_id": f"in.({order_item_ids_str})"}
+                    )
+                    if not resp.ok:
+                        logger.warning(f"주문 항목 옵션 삭제 응답: {resp.status_code} - {resp.text}")
+            else:
+                logger.warning(f"주문 항목 조회 실패: {resp.status_code} - {resp.text}")
+            
+            # 3단계: 주문 항목 삭제
             resp = requests.delete(
                 f"{self.base_url}/rest/v1/order_item",
                 headers=self.headers,
@@ -160,7 +178,7 @@ class SupabaseClient(QObject):
             if not resp.ok:
                 logger.warning(f"주문 항목 삭제 응답: {resp.status_code} - {resp.text}")
             
-            # 주문 삭제
+            # 4단계: 주문 삭제
             resp = requests.delete(
                 f"{self.base_url}/rest/v1/order",
                 headers=self.headers,
