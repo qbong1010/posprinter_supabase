@@ -235,7 +235,22 @@ def main():
         app = QApplication(sys.argv)
         
         try:
+            # 메인 윈도우 생성
             window = MainWindow(supabase_config, db_config)  # 설정을 전달
+            
+            # 컴팩트 위젯 생성
+            from src.gui.compact_widget import CompactWidget
+            from src.gui.window_manager import WindowManager
+            
+            compact_widget = CompactWidget()
+            
+            # WindowManager 생성 및 연결
+            window_manager = WindowManager(window, compact_widget)
+            window.set_window_manager(window_manager)
+            
+            # 컴팩트 위젯에 데이터 콜백 설정
+            compact_widget.order_data_callback = window_manager.get_compact_data
+            
             window.show()
             
             # 백그라운드에서 업데이트 확인 (24시간마다 또는 최초 실행 시)

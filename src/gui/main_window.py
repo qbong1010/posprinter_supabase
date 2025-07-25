@@ -69,6 +69,9 @@ class MainWindow(QMainWindow):
         # GitHub 저장소 설정
         self.github_repo = os.getenv('GITHUB_REPO', 'qbong1010/posprinter_supabase')
         
+        # WindowManager는 나중에 설정됨 (main.py에서)
+        self.window_manager = None
+        
         # 중앙 위젯 설정
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -85,12 +88,34 @@ class MainWindow(QMainWindow):
         version_label.setEnabled(False)
         version_label.setStyleSheet("background-color: #e1e1e1; color: #333;")
         
+        # 위젯 모드 버튼 추가
+        self.compact_mode_btn = QPushButton("📱 위젯 모드")
+        self.compact_mode_btn.setToolTip("작은 위젯으로 전환 (Always on top)")
+        self.compact_mode_btn.clicked.connect(self.switch_to_compact_mode)
+        self.compact_mode_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+            QPushButton:pressed {
+                background-color: #1e8449;
+            }
+        """)
+        
         # 업데이트 확인 버튼
         self.update_btn = QPushButton("업데이트 확인")
         self.update_btn.clicked.connect(self.check_for_updates)
         
         button_layout.addWidget(version_label)
         button_layout.addStretch()
+        button_layout.addWidget(self.compact_mode_btn)
         button_layout.addWidget(self.update_btn)
         
         layout.addLayout(button_layout)
@@ -260,4 +285,33 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             logging.error(f"업데이트 적용 중 오류: {e}")
-            QMessageBox.critical(self, "업데이트 오류", f"업데이트 중 오류가 발생했습니다:\n{e}") 
+            QMessageBox.critical(self, "업데이트 오류", f"업데이트 중 오류가 발생했습니다:\n{e}")
+    
+    def set_window_manager(self, window_manager):
+        """WindowManager 설정"""
+        self.window_manager = window_manager
+        logging.info("MainWindow에 WindowManager 설정 완료")
+    
+    def switch_to_compact_mode(self):
+        """위젯 모드로 전환"""
+        try:
+            if self.window_manager:
+                logging.info("사용자가 위젯 모드 전환 요청")
+                self.window_manager.switch_to_compact_mode()
+            else:
+                QMessageBox.warning(self, "오류", "위젯 모드 전환 기능이 초기화되지 않았습니다.")
+                logging.error("WindowManager가 설정되지 않음")
+        except Exception as e:
+            logging.error(f"위젯 모드 전환 중 오류: {e}")
+            QMessageBox.critical(self, "오류", f"위젯 모드 전환 중 오류가 발생했습니다:\n{e}")
+            
+    def closeEvent(self, event):
+        """윈도우 닫기 이벤트 - WindowManager 정리"""
+        try:
+            if self.window_manager:
+                self.window_manager.cleanup()
+                logging.info("MainWindow 종료 시 WindowManager 정리 완료")
+        except Exception as e:
+            logging.error(f"WindowManager 정리 중 오류: {e}")
+        
+        super().closeEvent(event) 
