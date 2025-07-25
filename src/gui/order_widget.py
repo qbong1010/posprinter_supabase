@@ -10,9 +10,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QCheckBox,
     QComboBox,
-    QScrollArea,
-    QFrame,
-    QGridLayout,
 )
 from PySide6.QtCore import Qt, Slot, QTimer
 import logging
@@ -27,7 +24,6 @@ from src.error_logger import get_error_logger
 
 from src.printer.manager import PrinterManager
 from src.gui.monitoring_factory import create_optimized_order_monitor
-from src.gui.order_card import OrderCard
 
 class OrderWidget(QWidget):
     def __init__(self, supabase_config, db_config):
@@ -84,6 +80,105 @@ class OrderWidget(QWidget):
         self.sync_btn = QPushButton("데이터 동기화")
         self.sync_btn.clicked.connect(self.sync_static_tables)
         top_layout.addWidget(self.sync_btn)
+
+        # 영수증 출력 버튼들
+        self.print_customer_btn = QPushButton("손님 영수증")
+        self.print_customer_btn.clicked.connect(self.print_customer_receipt)
+        top_layout.addWidget(self.print_customer_btn)
+
+        self.print_kitchen_btn = QPushButton("주방 영수증")
+        self.print_kitchen_btn.clicked.connect(self.print_kitchen_receipt)
+        top_layout.addWidget(self.print_kitchen_btn)
+
+        self.print_both_btn = QPushButton("동시 출력")
+        self.print_both_btn.clicked.connect(self.print_both_receipts)
+        self.print_both_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #007BFF;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+            QPushButton:pressed {
+                background-color: #004085;
+            }
+        """)
+        top_layout.addWidget(self.print_both_btn)
+
+        # 다중 선택 관련 버튼들
+        self.select_all_btn = QPushButton("전체 선택")
+        self.select_all_btn.clicked.connect(self.select_all_orders)
+        top_layout.addWidget(self.select_all_btn)
+        
+        self.deselect_all_btn = QPushButton("선택 해제")
+        self.deselect_all_btn.clicked.connect(self.deselect_all_orders)
+        top_layout.addWidget(self.deselect_all_btn)
+        
+        self.batch_complete_btn = QPushButton("선택항목 완료")
+        self.batch_complete_btn.clicked.connect(self.batch_mark_complete)
+        self.batch_complete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:pressed {
+                background-color: #1e7e34;
+            }
+        """)
+        top_layout.addWidget(self.batch_complete_btn)
+        
+        self.batch_reset_btn = QPushButton("선택항목 초기화")
+        self.batch_reset_btn.clicked.connect(self.batch_mark_new)
+        self.batch_reset_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ffc107;
+                color: #212529;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e0a800;
+            }
+            QPushButton:pressed {
+                background-color: #d39e00;
+            }
+        """)
+        top_layout.addWidget(self.batch_reset_btn)
+        
+        # 주문취소 버튼 추가
+        self.cancel_order_btn = QPushButton("주문취소")
+        self.cancel_order_btn.clicked.connect(self.cancel_order)
+        self.cancel_order_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #DC143C;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #B22222;
+            }
+            QPushButton:pressed {
+                background-color: #8B0000;
+            }
+        """)
+        top_layout.addWidget(self.cancel_order_btn)
         
         layout.addLayout(top_layout)
         
@@ -92,26 +187,20 @@ class OrderWidget(QWidget):
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
         
-        # 주문 카드 영역
-        # 스크롤 영역 생성
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # 주문 테이블
+        self.order_table = QTableWidget()
+        self.order_table.setColumnCount(8)  # 체크박스 컬럼 추가
+        self.order_table.setHorizontalHeaderLabels([
+            "선택", "주문번호", "회사명", "메뉴", "매장식사", "총액", "상태", "주문일시"
+        ])
+        self.order_table.horizontalHeader().setStretchLastSection(True)
+        self.order_table.setEditTriggers(QTableWidget.NoEditTriggers)  # 기본적으로 편집 비활성화
+        self.order_table.setSelectionBehavior(QTableWidget.SelectRows)  # 행 전체 선택
+        self.order_table.setSelectionMode(QTableWidget.MultiSelection)  # 다중 선택 허용
         
-        # 카드 컨테이너 위젯
-        self.cards_widget = QWidget()
-        self.cards_layout = QVBoxLayout(self.cards_widget)
-        self.cards_layout.setAlignment(Qt.AlignTop)
-        self.cards_layout.setSpacing(10)
-        self.cards_layout.setContentsMargins(10, 10, 10, 10)
-        
-        # 스크롤 영역에 컨테이너 설정
-        self.scroll_area.setWidget(self.cards_widget)
-        layout.addWidget(self.scroll_area)
-        
-        # 카드 목록 (주문 데이터 참조용)
-        self.order_cards = []
+        # 체크박스 컬럼 크기 고정
+        self.order_table.setColumnWidth(0, 50)
+        layout.addWidget(self.order_table)
 
         # 알림 레이블
         self.notice_label = QLabel("")
@@ -235,6 +324,10 @@ class OrderWidget(QWidget):
         """로딩 상태에 따라 UI 요소들을 업데이트합니다."""
         self.refresh_btn.setEnabled(not is_loading)
         self.sync_btn.setEnabled(not is_loading)
+        self.print_customer_btn.setEnabled(not is_loading)
+        self.print_kitchen_btn.setEnabled(not is_loading)
+        self.print_both_btn.setEnabled(not is_loading)
+        self.cancel_order_btn.setEnabled(not is_loading)
         self.progress_bar.setVisible(is_loading)
         if is_loading:
             self.progress_bar.setRange(0, 0)  # 무한 로딩 표시
@@ -391,53 +484,6 @@ class OrderWidget(QWidget):
         except Exception as e:
             logging.error(f"출력 상태 업데이트 오류: {e}")
 
-    def update_approval_status(self, order_id: int, is_approved: bool) -> None:
-        """주문의 승인 상태를 업데이트합니다."""
-        try:
-            # 로컬 DB 업데이트
-            with sqlite3.connect(self.cache.db_path) as conn:
-                cursor = conn.cursor()
-                now = datetime.now().isoformat()
-                
-                if is_approved:
-                    cursor.execute(
-                        'UPDATE "order" SET is_approved = ?, approved_at = ?, approved_by = ? WHERE order_id = ?',
-                        (1, now, "매장직원", order_id)
-                    )
-                else:
-                    cursor.execute(
-                        'UPDATE "order" SET is_approved = ?, approved_at = ?, approved_by = ? WHERE order_id = ?',
-                        (0, None, None, order_id)
-                    )
-                
-                conn.commit()
-                logging.info(f"주문 {order_id}의 승인 상태를 {is_approved}로 업데이트")
-            
-            # Supabase에도 업데이트 시도
-            if self.cache.base_url:
-                try:
-                    update_data = {"is_approved": is_approved}
-                    if is_approved:
-                        update_data["approved_at"] = now
-                        update_data["approved_by"] = "매장직원"
-                    else:
-                        update_data["approved_at"] = None
-                        update_data["approved_by"] = None
-                    
-                    response = requests.patch(
-                        f"{self.cache.base_url}/rest/v1/order",
-                        headers=self.cache.headers,
-                        json=update_data,
-                        params={"order_id": f"eq.{order_id}"}
-                    )
-                    response.raise_for_status()
-                    logging.info(f"Supabase에 주문 {order_id} 승인 상태 업데이트 성공")
-                except Exception as e:
-                    logging.error(f"Supabase 승인 상태 업데이트 실패: {e}")
-                        
-        except Exception as e:
-            logging.error(f"승인 상태 업데이트 오류: {e}")
-
     def process_auto_print(self, order_data: dict) -> bool:
         """자동 출력을 처리합니다."""
         order_id = order_data.get("order_id")
@@ -546,10 +592,8 @@ class OrderWidget(QWidget):
 
             orders = self.cache.get_recent_orders()
 
-            # 기존 카드들 모두 제거
-            for card in self.order_cards:
-                card.deleteLater()
-            self.order_cards.clear()
+            # 테이블 초기화
+            self.order_table.setRowCount(0)
             self.orders = []
 
             # 새로운 주문 데이터 추가 (최근 주문부터)
@@ -570,85 +614,100 @@ class OrderWidget(QWidget):
         finally:
             self.set_loading_state(False)
     
+    def get_selected_order_data(self):
+        """선택된 주문 데이터를 가져와서 포맷팅합니다."""
+        selected_items = self.order_table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "경고", "출력할 주문을 선택해주세요.")
+            return None
+            
+        # 선택된 주문 중 첫 번째 항목의 데이터를 사용
+        selected_item = selected_items[0]
+        order_data = selected_item.data(Qt.UserRole)
+        
+        if not order_data:
+            QMessageBox.warning(self, "경고", "선택한 주문 데이터가 유효하지 않습니다.")
+            return None
+            
+        # 주문 데이터 형식 변환
+        formatted_order = {
+            "order_id": str(order_data.get("order_id", "N/A")),
+            "company_name": order_data.get("company_name", "N/A"),
+            "created_at": order_data.get("created_at", ""),
+            "is_dine_in": order_data.get("is_dine_in", True),
+            "items": []
+        }
+        
+        # 주문 항목 처리
+        for item in order_data.get("items", []):
+            formatted_item = {
+                "order_item_id": item.get("order_item_id"),
+                "name": item.get("name", "N/A"),
+                "quantity": item.get("quantity", 1),
+                "price": item.get("price", 0),
+                "options": item.get("options", [])
+            }
+            formatted_order["items"].append(formatted_item)
+        
+        return formatted_order, order_data, self.order_table.row(selected_item)
 
-
-    def add_order(self, order_data):
-        """새로운 주문을 카드로 추가"""
-        try:
-            # 주문 카드 생성
-            order_card = OrderCard(order_data, self)
-            
-            # 카드 시그널 연결
-            order_card.order_approved.connect(self.on_order_approved)
-            order_card.order_printed.connect(self.on_order_printed)
-            
-            # 카드를 레이아웃에 추가
-            self.cards_layout.addWidget(order_card)
-            
-            # 카드 목록에 추가
-            self.order_cards.append(order_card)
-            self.orders.append(order_data)
-            
-        except Exception as e:
-            QMessageBox.warning(self, "오류", f"주문 추가 중 오류가 발생했습니다: {str(e)}")
-            logging.error(f"주문 카드 추가 오류: {e}")
-    
     @Slot()
-    def on_order_approved(self, order_id):
-        """주문 승인 시그널을 처리합니다."""
+    def print_customer_receipt(self):
+        """손님용 영수증만 출력합니다."""
         try:
-            # 데이터베이스에 승인 상태 업데이트
-            self.update_approval_status(order_id, True)
-            
-            # 카드 데이터 업데이트
-            for card in self.order_cards:
-                if card.order_id == order_id:
-                    card.order_data["is_approved"] = True
-                    card.order_data["approved_at"] = datetime.now().isoformat()
-                    card.order_data["approved_by"] = "매장직원"
-                    break
-            
-            self.show_temporary_message(f"주문 #{order_id}이(가) 승인되었습니다.", 3000)
-            logging.info(f"주문 {order_id} 승인 완료")
-            
-        except Exception as e:
-            logging.error(f"주문 승인 처리 오류: {e}")
-            QMessageBox.warning(self, "오류", f"주문 승인 처리 중 오류가 발생했습니다: {str(e)}")
-    
-    @Slot()
-    def on_order_printed(self, order_id):
-        """주문 출력 시그널을 처리합니다."""
-        try:
-            # 해당 주문의 카드 찾기
-            target_card = None
-            for card in self.order_cards:
-                if card.order_id == order_id:
-                    target_card = card
-                    break
-            
-            if not target_card:
-                QMessageBox.warning(self, "오류", "출력할 주문을 찾을 수 없습니다.")
+            result = self.get_selected_order_data()
+            if not result:
                 return
             
-            # 주문 데이터 형식 변환
-            formatted_order = {
-                "order_id": str(order_id),
-                "company_name": target_card.order_data.get("company_name", "N/A"),
-                "created_at": target_card.order_data.get("created_at", ""),
-                "is_dine_in": target_card.order_data.get("is_dine_in", True),
-                "items": []
-            }
+            formatted_order, order_data, current_row = result
             
-            # 주문 항목 처리
-            for item in target_card.order_data.get("items", []):
-                formatted_item = {
-                    "order_item_id": item.get("order_item_id"),
-                    "name": item.get("name", "N/A"),
-                    "quantity": item.get("quantity", 1),
-                    "price": item.get("price", 0),
-                    "options": item.get("options", [])
-                }
-                formatted_order["items"].append(formatted_item)
+            # 디버깅을 위한 설정 정보 확인
+            customer_config = self.printer_manager.get_customer_printer_config()
+            logging.info(f"손님용 영수증 출력 시작 - 설정: {customer_config}")
+            
+            # 손님용 프린터 출력 시도
+            success = self.printer_manager.print_customer_receipt(formatted_order)
+            
+            if success:
+                QMessageBox.information(self, "성공", "손님용 영수증이 출력되었습니다.")
+            else:
+                QMessageBox.warning(self, "실패", f"손님용 영수증 출력에 실패했습니다.\n현재 설정: {customer_config.get('printer_type', 'Unknown')}")
+                
+        except Exception as e:
+            QMessageBox.warning(self, "오류", f"손님용 영수증 출력 중 오류가 발생했습니다: {str(e)}")
+            logging.error(f"손님용 영수증 출력 오류: {e}")
+
+    @Slot()
+    def print_kitchen_receipt(self):
+        """주방용 영수증만 출력합니다."""
+        try:
+            result = self.get_selected_order_data()
+            if not result:
+                return
+            
+            formatted_order, order_data, current_row = result
+            
+            # 주방용 프린터 출력 시도
+            success = self.printer_manager.print_kitchen_receipt(formatted_order)
+            
+            if success:
+                QMessageBox.information(self, "성공", "주방용 영수증이 출력되었습니다.")
+            else:
+                QMessageBox.warning(self, "실패", "주방용 영수증 출력에 실패했습니다.\nCOM 포트 연결을 확인해주세요.")
+                
+        except Exception as e:
+            QMessageBox.warning(self, "오류", f"주방용 영수증 출력 중 오류가 발생했습니다: {str(e)}")
+            logging.error(f"주방용 영수증 출력 오류: {e}")
+
+    @Slot()
+    def print_both_receipts(self):
+        """손님용과 주방용 영수증을 동시에 출력합니다."""
+        try:
+            result = self.get_selected_order_data()
+            if not result:
+                return
+            
+            formatted_order, order_data, current_row = result
             
             # 양쪽 프린터 동시 출력 시도
             results = self.printer_manager.print_both_receipts(formatted_order)
@@ -668,11 +727,15 @@ class OrderWidget(QWidget):
                 
                 if reply == QMessageBox.Yes:
                     # 상태 업데이트
-                    self.update_order_status(order_id, True)
-                    target_card.order_data["is_printed"] = True
-                    target_card.update_order_data(target_card.order_data)
+                    self.update_order_status(order_data["order_id"], True)
+                    self.update_is_printed_status(order_data["order_id"], True)
                     
-                    self.show_temporary_message(f"주문 #{order_id} 영수증이 성공적으로 출력되었습니다.", 3000)
+                    # UI 업데이트 - 드롭다운 위젯의 상태 변경
+                    status_combo = self.order_table.cellWidget(current_row, 5)
+                    if status_combo:
+                        status_combo.setCurrentText("출력완료")
+                    
+                    QMessageBox.information(self, "성공", "영수증이 성공적으로 출력되었습니다.")
                 else:
                     QMessageBox.warning(self, "출력 실패", "프린터 출력을 확인해주세요.")
             elif customer_success or kitchen_success:
@@ -693,8 +756,87 @@ class OrderWidget(QWidget):
                 QMessageBox.warning(self, "실패", "양쪽 영수증 출력에 모두 실패했습니다.")
                 
         except Exception as e:
-            logging.error(f"주문 출력 처리 오류: {e}")
-            QMessageBox.warning(self, "오류", f"주문 출력 처리 중 오류가 발생했습니다: {str(e)}")
+            QMessageBox.warning(self, "오류", f"영수증 출력 중 오류가 발생했습니다: {str(e)}")
+            logging.error(f"영수증 출력 오류: {e}")
+
+    @Slot()
+    def print_receipt(self):
+        """기존 호환성을 위한 메서드 (동시 출력으로 연결)"""
+        self.print_both_receipts()
+
+    def add_order(self, order_data):
+        """새로운 주문을 테이블에 추가"""
+        try:
+            row_position = self.order_table.rowCount()
+            self.order_table.insertRow(row_position)
+
+            # 체크박스 추가
+            check_box = QCheckBox()
+            check_box.setChecked(order_data.get("is_printed", False)) # 초기 상태 설정
+            check_box.stateChanged.connect(lambda state, r=row_position: self.on_checkbox_changed(r, state))
+            self.order_table.setCellWidget(row_position, 0, check_box)
+
+            # 주문 데이터 설정
+            order_id = str(order_data.get("order_id", "N/A"))
+            item_id = QTableWidgetItem(order_id)
+            item_id.setData(Qt.UserRole, order_data)
+            self.order_table.setItem(row_position, 1, item_id)
+            
+            # 회사명
+            company_name = order_data.get("company_name", "N/A")
+            self.order_table.setItem(row_position, 2, QTableWidgetItem(company_name))
+            
+            # 메뉴 항목 구성
+            items = order_data.get("items", [])
+            items_text = "\n".join([
+                f"{item.get('name', 'N/A')} x{item.get('quantity', 1)}"
+                for item in items
+            ])
+            self.order_table.setItem(row_position, 3, QTableWidgetItem(items_text))
+            
+            # 매장식사 여부
+            is_dine_in = "매장식사" if order_data.get("is_dine_in", True) else "포장"
+            self.order_table.setItem(row_position, 4, QTableWidgetItem(is_dine_in))
+            
+            # 총액
+            total_price = f"{order_data.get('total_price', 0):,}원"
+            self.order_table.setItem(row_position, 5, QTableWidgetItem(total_price))
+            
+            # 상태 (기존 is_printed 기반) - 드롭다운으로 변경
+            status = "출력완료" if order_data.get("is_printed", False) else "신규"
+            
+            # QComboBox 생성
+            status_combo = QComboBox()
+            status_combo.addItems(["신규", "출력완료"])
+            status_combo.setCurrentText(status)
+            
+            # 상태 변경 이벤트 연결
+            status_combo.currentTextChanged.connect(
+                lambda new_status, row=row_position: self.on_status_changed(row, new_status)
+            )
+            
+            # 테이블에 QComboBox 위젯 설정
+            self.order_table.setCellWidget(row_position, 6, status_combo)
+            
+            # 주문일시
+            created_at = order_data.get("created_at", "")
+            if created_at:
+                # ISO 형식의 날짜를 한국 시간(KST)으로 변환하여 표시
+                from datetime import datetime, timezone
+                from zoneinfo import ZoneInfo
+                try:
+                    dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.astimezone(ZoneInfo("Asia/Seoul"))
+                    created_at = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass
+            self.order_table.setItem(row_position, 7, QTableWidgetItem(created_at))
+            
+            self.orders.append(order_data)
+        except Exception as e:
+            QMessageBox.warning(self, "오류", f"주문 추가 중 오류가 발생했습니다: {str(e)}")
 
     @Slot()
     def sync_static_tables(self):
@@ -735,7 +877,44 @@ class OrderWidget(QWidget):
         finally:
             self.set_loading_state(False)
 
-
+    def on_checkbox_changed(self, row, state):
+        """체크박스 상태가 변경될 때 호출되는 메서드"""
+        try:
+            # 체크박스 상태를 확인하여 is_printed 값 결정
+            is_printed = (state == Qt.Checked.value)
+            
+            # 주문 데이터 가져오기
+            order_item = self.order_table.item(row, 0) # 체크박스 열
+            if not order_item:
+                return
+                
+            order_data = order_item.data(Qt.UserRole)
+            if not order_data:
+                return
+                
+            order_id = order_data.get("order_id")
+            
+            # 상태가 실제로 변경된 경우만 처리
+            if order_data.get("is_printed") == is_printed:
+                return
+                
+            logging.info(f"주문 {order_id} 출력 상태 변경: {order_data.get('is_printed')} -> {is_printed}")
+            
+            # 데이터베이스 업데이트
+            self.update_order_status(order_id, is_printed)
+            
+            # 로컬 order_data도 업데이트
+            order_data["is_printed"] = is_printed
+            order_item.setData(Qt.UserRole, order_data)
+            
+            # 성공 메시지 표시
+            self.show_temporary_message(f"주문 {order_id}의 출력 상태가 '{'출력완료' if is_printed else '신규'}'로 변경되었습니다.", 3000)
+            
+        except Exception as e:
+            logging.error(f"체크박스 상태 변경 오류: {e}")
+            QMessageBox.warning(self, "오류", f"출력 상태 변경 중 오류가 발생했습니다: {str(e)}")
+            # 원래 상태로 되돌리기
+            self.refresh_orders()
 
     def sync_auto_print_checkbox(self, show_message=False):
         """자동 출력 체크박스 상태를 실제 설정과 동기화합니다."""
@@ -778,6 +957,97 @@ class OrderWidget(QWidget):
         """임시 메시지를 지웁니다."""
         self.notice_label.setText("")
 
+    @Slot()
+    def cancel_order(self):
+        """선택된 주문을 취소(삭제)합니다."""
+        try:
+            # 체크박스로 선택된 주문들 가져오기
+            selected_rows = self.get_selected_rows()
+            
+            if not selected_rows:
+                QMessageBox.warning(self, "경고", "취소할 주문을 선택해주세요.")
+                return
+                
+            # 선택된 주문들의 데이터를 가져오기
+            orders_to_cancel = []
+            for row in selected_rows:
+                order_item = self.order_table.item(row, 1)  # 주문번호 컬럼
+                if order_item:
+                    order_data = order_item.data(Qt.UserRole)
+                    if order_data:
+                        orders_to_cancel.append((row, order_data))
+            
+            if not orders_to_cancel:
+                QMessageBox.warning(self, "경고", "선택한 주문 데이터를 찾을 수 없습니다.")
+                return
+             
+            # 확인 팝업 표시
+            reply = QMessageBox.question(
+                self,
+                "주문 취소 확인",
+                f"선택된 {len(orders_to_cancel)}개의 주문을 취소하시겠습니까?\n\n※ 주의: 취소된 주문은 복구할 수 없습니다.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # 로딩 상태 설정
+            self.set_loading_state(True)
+            
+            # Supabase에서 주문 삭제
+            from src.supabase_client import SupabaseClient
+            supabase_client = SupabaseClient()
+            
+            successful_cancellations = []
+            failed_cancellations = []
+            
+            for row, order_data in orders_to_cancel:
+                order_id = order_data.get("order_id")
+                try:
+                    supabase_success = supabase_client.delete_order(order_id)
+                    cache_success = self.cache.delete_order_from_cache(order_id)
+                    
+                    if supabase_success and cache_success:
+                        successful_cancellations.append((row, order_id))
+                    else:
+                        failed_cancellations.append((row, order_id))
+                        
+                except Exception as e:
+                    logging.error(f"주문 {order_id} 취소 중 오류: {e}")
+                    failed_cancellations.append((row, order_id))
+            
+            # 성공한 주문들의 행을 역순으로 삭제 (인덱스 변경 방지)
+            for row, order_id in sorted(successful_cancellations, reverse=True):
+                self.order_table.removeRow(row)
+                # orders 리스트에서도 제거
+                self.orders = [order for order in self.orders if order.get("order_id") != order_id]
+                logging.info(f"주문 {order_id} 취소 성공")
+            
+            # 결과 메시지 표시
+            if successful_cancellations:
+                success_msg = f"{len(successful_cancellations)}개 주문이 성공적으로 취소되었습니다."
+                if failed_cancellations:
+                    success_msg += f"\n{len(failed_cancellations)}개 주문 취소에 실패했습니다."
+                    QMessageBox.warning(self, "부분 성공", success_msg)
+                else:
+                    QMessageBox.information(self, "성공", success_msg)
+                    
+                self.show_temporary_message(f"{len(successful_cancellations)}개 주문이 취소되었습니다.", 3000)
+            else:
+                QMessageBox.critical(self, "실패", "선택된 주문들의 취소에 모두 실패했습니다.")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"주문 취소 중 오류가 발생했습니다:\n{str(e)}")
+            logging.error(f"주문 취소 오류: {e}")
+            # Supabase에도 에러 로깅
+            error_logger = get_error_logger()
+            if error_logger:
+                error_logger.log_error(e, "주문 취소 오류", {"context": "cancel_order", "order_count": len(selected_rows) if 'selected_rows' in locals() else 0})
+        finally:
+            self.set_loading_state(False)
+
     def closeEvent(self, event):
         """위젯이 닫힐 때 모니터링 시스템 중지"""
         try:
@@ -787,6 +1057,175 @@ class OrderWidget(QWidget):
             logging.error(f"모니터링 시스템 종료 오류: {e}")
         super().closeEvent(event)
 
+    def on_status_changed(self, row, new_status):
+        """상태 드롭다운이 변경될 때 호출되는 메서드"""
+        try:
+            # 주문 데이터 가져오기
+            order_item = self.order_table.item(row, 0) # 체크박스 열
+            if not order_item:
+                return
+                
+            order_data = order_item.data(Qt.UserRole)
+            if not order_data:
+                return
+                
+            order_id = order_data.get("order_id")
+            old_status = "출력완료" if order_data.get("is_printed", False) else "신규"
+            
+            # 상태가 실제로 변경된 경우만 처리
+            if old_status == new_status:
+                return
+                
+            logging.info(f"주문 {order_id} 상태 변경: {old_status} -> {new_status}")
+            
+            # 새로운 is_printed 값 결정
+            is_printed = (new_status == "출력완료")
+            
+            # 데이터베이스 업데이트
+            self.update_order_status(order_id, is_printed)
+            
+            # 로컬 order_data도 업데이트
+            order_data["is_printed"] = is_printed
+            order_item.setData(Qt.UserRole, order_data)
+            
+            # 성공 메시지 표시
+            self.show_temporary_message(f"주문 {order_id}의 상태가 '{new_status}'로 변경되었습니다.", 3000)
+            
+        except Exception as e:
+            logging.error(f"상태 변경 오류: {e}")
+            QMessageBox.warning(self, "오류", f"상태 변경 중 오류가 발생했습니다: {str(e)}")
+            # 원래 상태로 되돌리기
+            self.refresh_orders()
 
+    @Slot()
+    def select_all_orders(self):
+        """모든 주문을 선택합니다."""
+        try:
+            for row in range(self.order_table.rowCount()):
+                checkbox = self.order_table.cellWidget(row, 0)
+                if checkbox:
+                    checkbox.setChecked(True)
+            self.show_temporary_message(f"전체 {self.order_table.rowCount()}개 주문이 선택되었습니다.", 2000)
+        except Exception as e:
+            logging.error(f"전체 선택 오류: {e}")
 
+    @Slot()
+    def deselect_all_orders(self):
+        """모든 주문 선택을 해제합니다."""
+        try:
+            for row in range(self.order_table.rowCount()):
+                checkbox = self.order_table.cellWidget(row, 0)
+                if checkbox:
+                    checkbox.setChecked(False)
+            self.show_temporary_message("모든 선택이 해제되었습니다.", 2000)
+        except Exception as e:
+            logging.error(f"선택 해제 오류: {e}")
 
+    @Slot()
+    def batch_mark_complete(self):
+        """선택된 주문들을 일괄적으로 출력완료 상태로 변경합니다."""
+        try:
+            selected_rows = self.get_selected_rows()
+            if not selected_rows:
+                QMessageBox.warning(self, "경고", "변경할 주문을 선택해주세요.")
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "일괄 상태 변경",
+                f"선택된 {len(selected_rows)}개 주문을 '출력완료' 상태로 변경하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+
+            if reply == QMessageBox.Yes:
+                success_count = 0
+                for row in selected_rows:
+                    order_item = self.order_table.item(row, 1)  # 주문번호 컬럼
+                    if order_item:
+                        order_data = order_item.data(Qt.UserRole)
+                        if order_data:
+                            order_id = order_data.get("order_id")
+                            
+                            # 데이터베이스 업데이트
+                            self.update_order_status(order_id, True)
+                            
+                            # 로컬 데이터 업데이트
+                            order_data["is_printed"] = True
+                            order_item.setData(Qt.UserRole, order_data)
+                            
+                            # UI 업데이트
+                            checkbox = self.order_table.cellWidget(row, 0)
+                            if checkbox:
+                                checkbox.setChecked(True)
+                            
+                            status_combo = self.order_table.cellWidget(row, 6)
+                            if status_combo:
+                                status_combo.setCurrentText("출력완료")
+                            
+                            success_count += 1
+
+                self.show_temporary_message(f"{success_count}개 주문이 '출력완료' 상태로 변경되었습니다.", 3000)
+
+        except Exception as e:
+            logging.error(f"일괄 완료 처리 오류: {e}")
+            QMessageBox.warning(self, "오류", f"일괄 상태 변경 중 오류가 발생했습니다: {str(e)}")
+
+    @Slot()
+    def batch_mark_new(self):
+        """선택된 주문들을 일괄적으로 신규 상태로 변경합니다."""
+        try:
+            selected_rows = self.get_selected_rows()
+            if not selected_rows:
+                QMessageBox.warning(self, "경고", "변경할 주문을 선택해주세요.")
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "일괄 상태 변경",
+                f"선택된 {len(selected_rows)}개 주문을 '신규' 상태로 변경하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+
+            if reply == QMessageBox.Yes:
+                success_count = 0
+                for row in selected_rows:
+                    order_item = self.order_table.item(row, 1)  # 주문번호 컬럼
+                    if order_item:
+                        order_data = order_item.data(Qt.UserRole)
+                        if order_data:
+                            order_id = order_data.get("order_id")
+                            
+                            # 데이터베이스 업데이트
+                            self.update_order_status(order_id, False)
+                            
+                            # 로컬 데이터 업데이트
+                            order_data["is_printed"] = False
+                            order_item.setData(Qt.UserRole, order_data)
+                            
+                            # UI 업데이트
+                            checkbox = self.order_table.cellWidget(row, 0)
+                            if checkbox:
+                                checkbox.setChecked(False)
+                            
+                            status_combo = self.order_table.cellWidget(row, 6)
+                            if status_combo:
+                                status_combo.setCurrentText("신규")
+                            
+                            success_count += 1
+
+                self.show_temporary_message(f"{success_count}개 주문이 '신규' 상태로 변경되었습니다.", 3000)
+
+        except Exception as e:
+            logging.error(f"일괄 초기화 처리 오류: {e}")
+            QMessageBox.warning(self, "오류", f"일괄 상태 변경 중 오류가 발생했습니다: {str(e)}")
+
+    def get_selected_rows(self):
+        """체크박스가 선택된 행들의 번호를 반환합니다."""
+        selected_rows = []
+        for row in range(self.order_table.rowCount()):
+            checkbox = self.order_table.cellWidget(row, 0)
+            if checkbox and checkbox.isChecked():
+                selected_rows.append(row)
+        return selected_rows

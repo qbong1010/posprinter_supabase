@@ -61,9 +61,6 @@ CREATE TABLE public.order (
   created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   is_printed boolean DEFAULT false,
   signature_data text,
-  is_approved boolean DEFAULT false,
-  approved_at timestamp without time zone,
-  approved_by text,
   CONSTRAINT order_pkey PRIMARY KEY (order_id),
   CONSTRAINT order_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.company(company_id)
 );

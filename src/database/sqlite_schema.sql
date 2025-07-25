@@ -65,9 +65,6 @@ CREATE TABLE IF NOT EXISTS "order" (
   print_status VARCHAR(20) DEFAULT '신규',
   print_attempts INTEGER DEFAULT 0,
   last_print_attempt TIMESTAMP,
-  is_approved INTEGER DEFAULT 0,
-  approved_at TIMESTAMP,
-  approved_by TEXT,
   FOREIGN KEY (company_id) REFERENCES company(company_id)
 );
 

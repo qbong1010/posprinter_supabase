@@ -87,28 +87,6 @@ class SupabaseCache:
             except sqlite3.Error:
                 pass  # 이미 존재하는 경우
                 
-            # 승인 관련 컬럼들 추가 (마이그레이션)
-            try:
-                conn.execute("ALTER TABLE \"order\" ADD COLUMN is_approved INTEGER DEFAULT 0")
-                conn.commit()
-                logger.info("is_approved 컬럼이 추가되었습니다.")
-            except sqlite3.Error:
-                pass  # 이미 존재하는 경우
-                
-            try:
-                conn.execute("ALTER TABLE \"order\" ADD COLUMN approved_at TIMESTAMP")
-                conn.commit()
-                logger.info("approved_at 컬럼이 추가되었습니다.")
-            except sqlite3.Error:
-                pass  # 이미 존재하는 경우
-                
-            try:
-                conn.execute("ALTER TABLE \"order\" ADD COLUMN approved_by TEXT")
-                conn.commit()
-                logger.info("approved_by 컬럼이 추가되었습니다.")
-            except sqlite3.Error:
-                pass  # 이미 존재하는 경우
-                
             # order_item_option 테이블에 quantity 컬럼 추가 (마이그레이션)
             try:
                 conn.execute("ALTER TABLE order_item_option ADD COLUMN quantity INTEGER DEFAULT 1")
