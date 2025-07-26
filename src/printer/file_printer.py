@@ -35,7 +35,7 @@ def print_receipt(order_data: dict) -> bool:
             logger.debug("기존 출력 파일 삭제됨")
 
         # 영수증 텍스트 생성 및 파일 저장
-        receipt_text = format_receipt_string(order_data)
+        receipt_text = format_receipt_string(order_data, "customer")
         with open(output_file, "wb") as f:
             f.write(receipt_text.encode("cp949"))
             logger.debug("영수증 텍스트 파일로 저장 완료 (cp949 인코딩)")
@@ -50,7 +50,12 @@ def print_receipt(order_data: dict) -> bool:
 def print_receipt_win(order_data: dict, printer_name: str = None) -> bool:
     """윈도우 프린터로 영수증을 출력합니다."""
     try:
-        receipt_text = format_receipt_string(order_data)
+        # 디버깅: 손님 프린터(Windows)로 전달된 데이터 로깅
+        logger.info(f"손님 프린터(Windows) 데이터 - order_id: {order_data.get('order_id')}")
+        logger.info(f"손님 프린터(Windows) 데이터 - total_price: {order_data.get('total_price')}")
+        logger.info(f"손님 프린터(Windows) 데이터 - items 개수: {len(order_data.get('items', []))}")
+        
+        receipt_text = format_receipt_string(order_data, "customer")
         if not printer_name:
             printer_name = win32print.GetDefaultPrinter()
         hprinter = win32print.OpenPrinter(printer_name)

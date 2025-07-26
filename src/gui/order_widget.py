@@ -500,6 +500,7 @@ class OrderWidget(QWidget):
                 "company_name": order_data.get("company_name", "N/A"),
                 "created_at": order_data.get("created_at", ""),
                 "is_dine_in": order_data.get("is_dine_in", True),
+                "total_price": order_data.get("total_price", 0),  # 데이터베이스의 total_price 포함
                 "items": []
             }
             
@@ -635,6 +636,7 @@ class OrderWidget(QWidget):
             "company_name": order_data.get("company_name", "N/A"),
             "created_at": order_data.get("created_at", ""),
             "is_dine_in": order_data.get("is_dine_in", True),
+            "total_price": order_data.get("total_price", 0),  # 데이터베이스의 total_price 포함
             "items": []
         }
         

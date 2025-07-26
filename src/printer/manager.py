@@ -8,7 +8,7 @@ from src.error_logger import get_error_logger, log_exception
 
 from src.printer.escpos_printer import print_receipt_esc_usb  # USB 프린터 출력 함수
 from src.printer.file_printer import print_receipt as file_print_receipt, print_receipt_win  # 파일/윈도우 프린터 출력 함수
-from src.printer.com_printer import print_receipt_com, print_kitchen_receipt_com, test_com_printer  # COM 포트 프린터 출력 함수
+from src.printer.com_printer import print_kitchen_receipt_com, test_com_printer  # COM 포트 프린터 출력 함수
 
 logger = logging.getLogger(__name__)
 

@@ -4,6 +4,7 @@ from typing import Any, Dict
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from collections import Counter
+import logging
 
 def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer") -> str:
     """
@@ -24,19 +25,6 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
     created_at = order.get('created_at', '')
     is_dine_in = order.get('is_dine_in', True)
 
-    # 주문일시 포맷팅 (UTC -> KST)
-    if created_at:
-        try:
-            created_at_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-            if created_at_dt.tzinfo is None:
-                created_at_dt = created_at_dt.replace(tzinfo=timezone.utc)
-            created_at_dt = created_at_dt.astimezone(ZoneInfo('Asia/Seoul'))
-            formatted_created_at = created_at_dt.strftime('%Y-%m-%d %H:%M')
-        except Exception:
-            formatted_created_at = created_at
-    else:
-        formatted_created_at = ''
-
     # Header (영수증 타입에 따라 구분)
     if receipt_type == "kitchen":
         lines.append("*** 주방 주문서 ***")
@@ -47,12 +35,14 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
 
     # Order info
     lines.append(f"주문번호: {order_id}")
-    lines.append(f"주문일시: {formatted_created_at}")
+    lines.append(f"주문일시: {created_at}")
     lines.append(f"주문유형:  {'매장 식사' if is_dine_in else '포장'}")
     lines.append("")  # 빈 줄
 
     lines.append("-" * 20)
 
+    # 데이터베이스의 total_price가 있으면 우선 사용, 없으면 개별 계산
+    db_total_price = order.get("total_price")
     total = 0
     for item in order.get("items", []):
         name = item.get("name")
@@ -124,17 +114,21 @@ def format_receipt_string(order: Dict[str, Any], receipt_type: str = "customer")
         lines.append("")  # 아이템 간 빈 줄
 
     lines.append("-" * 20)
-    lines.append(f"총 금액: {total:,}원")
+    
+    # 총 금액 표시 (데이터베이스 total_price 우선 사용)
+    if db_total_price is not None and db_total_price > 0:
+        logging.info(f"영수증 템플릿({receipt_type}) - DB total_price 사용: {db_total_price:,}원")
+        lines.append(f"총 금액: {db_total_price:,}원")
+    else:
+        logging.info(f"영수증 템플릿({receipt_type}) - 계산된 total 사용: {total:,}원")
+        lines.append(f"총 금액: {total:,}원")
+    
     lines.append("")  # 빈 줄
     lines.append("감사합니다!")
     lines.append("")  # 빈 줄
-
-    current_time = datetime.now(ZoneInfo('Asia/Seoul'))
-    lines.append(f"출력시간: {current_time.strftime('%Y-%m-%d %H:%M')}")
-    lines.append("")  # 마지막 빈 줄
-
+# 마지막 빈 줄
     return "\n".join(lines)
 
 def format_kitchen_receipt_string(order: Dict[str, Any]) -> str:
-    """주방용 영수증 문자열을 포맷팅합니다."""
-    return format_receipt_string(order, "kitchen")
+    """주방용 영수증 문자열을 포맷팅합니다. (손님용과 동일한 포맷)"""
+    return format_receipt_string(order, "customer")

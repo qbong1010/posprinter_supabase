@@ -38,7 +38,7 @@ def setup_logging():
     for h in handlers:
         h.setFormatter(formatter)
 
-    logging.basicConfig(level=logging.INFO, handlers=handlers)
+    logging.basicConfig(level=logging.DEBUG, handlers=handlers)
 
 def get_last_update_check():
     """마지막 업데이트 확인 시간을 가져옵니다."""

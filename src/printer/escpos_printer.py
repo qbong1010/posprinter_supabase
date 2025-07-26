@@ -83,7 +83,12 @@ def print_receipt_esc_usb(order, vendor_id, product_id, interface, codepage=0x13
         return False
     
     try:
-        receipt_text = format_receipt_string(order)
+        # 디버깅: 손님 프린터(ESC/POS)로 전달된 데이터 로깅
+        logger.info(f"손님 프린터(ESC/POS) 데이터 - order_id: {order.get('order_id')}")
+        logger.info(f"손님 프린터(ESC/POS) 데이터 - total_price: {order.get('total_price')}")
+        logger.info(f"손님 프린터(ESC/POS) 데이터 - items 개수: {len(order.get('items', []))}")
+        
+        receipt_text = format_receipt_string(order, "customer")
         
         # 디버깅을 위해 텍스트 저장
         debug_save_receipt_text(receipt_text, f"receipt_{order.get('order_id', 'test')}.txt")
