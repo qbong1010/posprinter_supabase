@@ -1,37 +1,18 @@
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QTextEdit, QPushButton, QHBoxLayout, QMessageBox
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtGui import QFont
 from src.gui.order_widget import OrderWidget
 from src.gui.printer_widget import PrinterWidget
 from src.supabase_client import SupabaseClient
 from src.gui.receipt_preview import read_receipt_file
 from src.updater import check_and_update, get_current_version
+from src.error_logger import get_error_logger
 import os
 import logging
+import subprocess
+import sys
 
-class UpdateCheckThread(QThread):
-    """업데이트 확인을 위한 스레드"""
-    update_available = Signal(dict)  # 업데이트 정보
-    no_update = Signal()
-    error = Signal(str)
-    
-    def __init__(self, github_repo):
-        super().__init__()
-        self.github_repo = github_repo
-    
-    def run(self):
-        try:
-            from src.updater import AutoUpdater, get_current_version
-            current_version = get_current_version()
-            updater = AutoUpdater(self.github_repo, current_version)
-            
-            release_info = updater.check_for_updates()
-            if release_info:
-                self.update_available.emit(release_info)
-            else:
-                self.no_update.emit()
-        except Exception as e:
-            self.error.emit(str(e))
+
 
 class ReceiptPreviewWidget(QWidget):
     def __init__(self):
@@ -65,9 +46,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("주문 관리 시스템")
         self.setMinimumSize(800, 600)
-        
-        # GitHub 저장소 설정
-        self.github_repo = os.getenv('GITHUB_REPO', 'qbong1010/posprinter_supabase')
         
         # WindowManager는 나중에 설정됨 (main.py에서)
         self.window_manager = None
@@ -109,9 +87,25 @@ class MainWindow(QMainWindow):
             }
         """)
         
-        # 업데이트 확인 버튼
-        self.update_btn = QPushButton("업데이트 확인")
-        self.update_btn.clicked.connect(self.check_for_updates)
+        # 업데이트 버튼
+        self.update_btn = QPushButton("업데이트")
+        self.update_btn.clicked.connect(self.update_from_git)
+        self.update_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #17A2B8;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #138496;
+            }
+            QPushButton:pressed {
+                background-color: #117A8B;
+            }
+        """)
         
         button_layout.addWidget(version_label)
         button_layout.addStretch()
@@ -139,9 +133,6 @@ class MainWindow(QMainWindow):
 
         # SupabaseClient 연결
         self.supabase_client = SupabaseClient()
-        
-        # 업데이트 확인 스레드
-        self.update_thread = None
         
         # 윈도우 설정
         self.setStyleSheet("""
@@ -192,100 +183,154 @@ class MainWindow(QMainWindow):
             }
         """)
     
-    def check_for_updates(self):
-        """업데이트 확인 버튼 클릭 시 호출"""
+    @Slot()
+    def update_from_git(self):
+        """Git 저장소에서 최신 코드를 가져와 업데이트합니다."""
         try:
-            if self.update_thread and self.update_thread.isRunning():
-                QMessageBox.information(self, "업데이트 확인", "이미 업데이트를 확인 중입니다.")
+            # 확인 팝업 표시
+            reply = QMessageBox.question(
+                self,
+                "업데이트 확인",
+                "Git 저장소에서 최신 코드를 가져오시겠습니까?\n\n※ 로컬 변경사항이 있다면 덮어씌워질 수 있습니다.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
                 return
             
-            self.update_btn.setText("확인 중...")
+            # 버튼 상태 변경
+            original_text = self.update_btn.text()
+            self.update_btn.setText("업데이트 중...")
             self.update_btn.setEnabled(False)
             
-            # 업데이트 확인 스레드 시작
-            self.update_thread = UpdateCheckThread(self.github_repo)
-            self.update_thread.update_available.connect(self.on_update_available)
-            self.update_thread.no_update.connect(self.on_no_update)
-            self.update_thread.error.connect(self.on_update_error)
-            self.update_thread.finished.connect(self.on_update_check_finished)
-            self.update_thread.start()
+            logging.info("Git 업데이트 시작")
             
-        except Exception as e:
-            logging.error(f"업데이트 확인 중 오류: {e}")
-            QMessageBox.critical(self, "오류", f"업데이트 확인 중 오류가 발생했습니다:\n{e}")
-            self.on_update_check_finished()
-    
-    def on_update_available(self, release_info):
-        """업데이트가 있을 때 호출"""
-        try:
-            version = release_info.get('tag_name', '알 수 없음')
-            description = release_info.get('body', '업데이트 정보가 없습니다.')
+            # 현재 작업 디렉토리 가져오기 (프로젝트 루트)
+            current_dir = os.getcwd()
+            logging.info(f"현재 작업 디렉토리: {current_dir}")
             
-            msg = QMessageBox(self)
-            msg.setWindowTitle("업데이트 발견")
-            msg.setIcon(QMessageBox.Information)
-            msg.setText(f"새로운 버전이 있습니다: {version}")
-            msg.setDetailedText(f"릴리즈 노트:\n{description}")
-            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            msg.setDefaultButton(QMessageBox.Yes)
-            msg.button(QMessageBox.Yes).setText("업데이트 설치")
-            msg.button(QMessageBox.No).setText("나중에")
+            # Git 상태 확인
+            git_status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=current_dir,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
             
-            if msg.exec() == QMessageBox.Yes:
-                self.apply_update(release_info)
+            if git_status_result.returncode == 0 and git_status_result.stdout.strip():
+                # 로컬 변경사항이 있는 경우 추가 확인
+                dirty_reply = QMessageBox.question(
+                    self,
+                    "로컬 변경사항 발견",
+                    f"다음 파일들에 변경사항이 있습니다:\n\n{git_status_result.stdout}\n\n계속 진행하면 변경사항이 손실될 수 있습니다. 계속하시겠습니까?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if dirty_reply != QMessageBox.Yes:
+                    return
             
-        except Exception as e:
-            logging.error(f"업데이트 알림 표시 중 오류: {e}")
-            QMessageBox.critical(self, "오류", f"업데이트 정보 표시 중 오류가 발생했습니다:\n{e}")
-    
-    def on_no_update(self):
-        """업데이트가 없을 때 호출"""
-        QMessageBox.information(self, "업데이트 확인", "현재 최신 버전을 사용 중입니다.")
-    
-    def on_update_error(self, error_msg):
-        """업데이트 확인 중 오류 발생 시 호출"""
-        logging.error(f"업데이트 확인 오류: {error_msg}")
-        QMessageBox.warning(self, "업데이트 확인 실패", f"업데이트 확인 중 오류가 발생했습니다:\n{error_msg}")
-    
-    def on_update_check_finished(self):
-        """업데이트 확인 완료 시 호출"""
-        self.update_btn.setText("업데이트 확인")
-        self.update_btn.setEnabled(True)
-    
-    def apply_update(self, release_info):
-        """업데이트 적용"""
-        try:
-            from src.updater import AutoUpdater, get_current_version
+            # git pull 실행
+            logging.info("git pull 실행 중...")
+            result = subprocess.run(
+                ["git", "pull"],
+                cwd=current_dir,
+                capture_output=True,
+                text=True,
+                timeout=60  # 60초 타임아웃
+            )
             
-            current_version = get_current_version()
-            updater = AutoUpdater(self.github_repo, current_version)
-            
-            # 다운로드 진행
-            QMessageBox.information(self, "업데이트", "업데이트를 다운로드하고 있습니다.\n잠시만 기다려주세요.")
-            
-            zip_path = updater.download_update(release_info)
-            if not zip_path:
-                QMessageBox.critical(self, "업데이트 실패", "업데이트 다운로드에 실패했습니다.")
-                return
-            
-            # 업데이트 적용
-            if updater.apply_update(zip_path):
-                msg = QMessageBox(self)
-                msg.setWindowTitle("업데이트 완료")
-                msg.setIcon(QMessageBox.Information)
-                msg.setText("업데이트가 성공적으로 완료되었습니다.")
-                msg.setInformativeText("프로그램을 다시 시작해주세요.")
-                msg.setStandardButtons(QMessageBox.Ok)
-                msg.exec()
+            if result.returncode == 0:
+                # 성공
+                output = result.stdout.strip()
+                logging.info(f"Git 업데이트 성공: {output}")
                 
-                # 프로그램 종료
-                self.close()
+                if "Already up to date" in output or "이미 최신입니다" in output:
+                    # 이미 최신 버전
+                    QMessageBox.information(
+                        self, 
+                        "업데이트 완료", 
+                        "이미 최신 버전을 사용 중입니다."
+                    )
+                else:
+                    # 업데이트됨 - 재시작 옵션 제공
+                    restart_reply = QMessageBox.question(
+                        self,
+                        "업데이트 완료",
+                        f"업데이트가 완료되었습니다.\n\n변경사항:\n{output}\n\n변경사항을 적용하려면 프로그램을 재시작해야 합니다. 지금 재시작하시겠습니까?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.Yes
+                    )
+                    
+                    if restart_reply == QMessageBox.Yes:
+                        # 프로그램 재시작
+                        self.restart_application()
             else:
-                QMessageBox.critical(self, "업데이트 실패", "업데이트 적용에 실패했습니다.\n백업이 복원되었습니다.")
+                # 실패
+                error_output = result.stderr.strip() or result.stdout.strip()
+                logging.error(f"Git 업데이트 실패: {error_output}")
                 
+                QMessageBox.critical(
+                    self,
+                    "업데이트 실패",
+                    f"Git 업데이트에 실패했습니다.\n\n오류 내용:\n{error_output}\n\n네트워크 연결이나 Git 설정을 확인해주세요."
+                )
+                
+        except subprocess.TimeoutExpired:
+            logging.error("Git 업데이트 타임아웃")
+            QMessageBox.critical(self, "업데이트 실패", "업데이트 요청이 시간 초과되었습니다.\n네트워크 연결을 확인해주세요.")
+            
+        except FileNotFoundError:
+            logging.error("Git 명령어를 찾을 수 없음")
+            QMessageBox.critical(self, "업데이트 실패", "Git이 설치되어 있지 않거나 PATH에 등록되어 있지 않습니다.\n\nGit을 설치하고 PATH에 추가한 후 다시 시도해주세요.")
+            
         except Exception as e:
-            logging.error(f"업데이트 적용 중 오류: {e}")
-            QMessageBox.critical(self, "업데이트 오류", f"업데이트 중 오류가 발생했습니다:\n{e}")
+            logging.error(f"Git 업데이트 중 예상치 못한 오류: {e}")
+            QMessageBox.critical(self, "업데이트 실패", f"업데이트 중 오류가 발생했습니다:\n\n{str(e)}")
+            
+            # Supabase에도 에러 로깅
+            error_logger = get_error_logger()
+            if error_logger:
+                error_logger.log_error(e, "Git 업데이트 오류", {"context": "git_update"})
+        
+        finally:
+            # 버튼 상태 복원
+            self.update_btn.setText(original_text)
+            self.update_btn.setEnabled(True)
+
+    def restart_application(self):
+        """애플리케이션을 재시작합니다."""
+        try:
+            logging.info("애플리케이션 재시작 중...")
+            
+            # 현재 실행 중인 파일의 경로를 가져옴
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 실행 파일
+                executable = sys.executable
+            else:
+                # Python 스크립트로 실행 중
+                executable = sys.executable
+                script_path = os.path.abspath(sys.argv[0])
+            
+            # 새 프로세스 시작
+            if getattr(sys, 'frozen', False):
+                # 실행 파일인 경우
+                subprocess.Popen([executable])
+            else:
+                # Python 스크립트인 경우
+                subprocess.Popen([executable, script_path])
+            
+            # 현재 프로그램 종료
+            sys.exit(0)
+            
+        except Exception as e:
+            logging.error(f"애플리케이션 재시작 실패: {e}")
+            QMessageBox.critical(
+                self,
+                "재시작 실패", 
+                f"자동 재시작에 실패했습니다.\n수동으로 프로그램을 재시작해주세요.\n\n오류: {str(e)}"
+            )
     
     def set_window_manager(self, window_manager):
         """WindowManager 설정"""

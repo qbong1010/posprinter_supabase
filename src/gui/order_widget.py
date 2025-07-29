@@ -15,9 +15,6 @@ from PySide6.QtCore import Qt, Slot, QTimer
 import logging
 import sqlite3
 import requests
-import subprocess
-import sys
-import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
@@ -83,27 +80,6 @@ class OrderWidget(QWidget):
         self.sync_btn = QPushButton("데이터 동기화")
         self.sync_btn.clicked.connect(self.sync_static_tables)
         top_layout.addWidget(self.sync_btn)
-
-        # 업데이트 버튼 추가
-        self.update_btn = QPushButton("업데이트")
-        self.update_btn.clicked.connect(self.update_from_git)
-        self.update_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #17A2B8;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #138496;
-            }
-            QPushButton:pressed {
-                background-color: #117A8B;
-            }
-        """)
-        top_layout.addWidget(self.update_btn)
 
         # 영수증 출력 버튼들
         self.print_customer_btn = QPushButton("손님 영수증")
@@ -301,7 +277,6 @@ class OrderWidget(QWidget):
         """로딩 상태에 따라 UI 요소들을 업데이트합니다."""
         self.refresh_btn.setEnabled(not is_loading)
         self.sync_btn.setEnabled(not is_loading)
-        self.update_btn.setEnabled(not is_loading)
         self.print_customer_btn.setEnabled(not is_loading)
         self.print_kitchen_btn.setEnabled(not is_loading)
         self.print_both_btn.setEnabled(not is_loading)
@@ -1301,157 +1276,4 @@ class OrderWidget(QWidget):
                 selected_rows.append(row)
         return selected_rows
 
-    @Slot()
-    def update_from_git(self):
-        """Git 저장소에서 최신 코드를 가져와 업데이트합니다."""
-        try:
-            # 확인 팝업 표시
-            reply = QMessageBox.question(
-                self,
-                "업데이트 확인",
-                "Git 저장소에서 최신 코드를 가져오시겠습니까?\n\n※ 로컬 변경사항이 있다면 덮어씌워질 수 있습니다.",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            if reply != QMessageBox.Yes:
-                return
-            
-            # 로딩 상태 설정
-            self.set_loading_state(True)
-            self.show_temporary_message("Git에서 최신 코드를 가져오는 중...", 0)  # 무제한 표시
-            
-            logging.info("Git 업데이트 시작")
-            
-            # 현재 작업 디렉토리 가져오기 (프로젝트 루트)
-            current_dir = os.getcwd()
-            logging.info(f"현재 작업 디렉토리: {current_dir}")
-            
-            # Git 상태 확인
-            git_status_result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=current_dir,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if git_status_result.returncode == 0 and git_status_result.stdout.strip():
-                # 로컬 변경사항이 있는 경우 추가 확인
-                dirty_reply = QMessageBox.question(
-                    self,
-                    "로컬 변경사항 발견",
-                    f"다음 파일들에 변경사항이 있습니다:\n\n{git_status_result.stdout}\n\n계속 진행하면 변경사항이 손실될 수 있습니다. 계속하시겠습니까?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
-                )
-                if dirty_reply != QMessageBox.Yes:
-                    self.show_temporary_message("업데이트가 취소되었습니다.", 3000)
-                    return
-            
-            # git pull 실행
-            logging.info("git pull 실행 중...")
-            result = subprocess.run(
-                ["git", "pull"],
-                cwd=current_dir,
-                capture_output=True,
-                text=True,
-                timeout=60  # 60초 타임아웃
-            )
-            
-            if result.returncode == 0:
-                # 성공
-                output = result.stdout.strip()
-                logging.info(f"Git 업데이트 성공: {output}")
-                
-                if "Already up to date" in output or "이미 최신입니다" in output:
-                    # 이미 최신 버전
-                    QMessageBox.information(
-                        self, 
-                        "업데이트 완료", 
-                        "이미 최신 버전을 사용 중입니다."
-                    )
-                    self.show_temporary_message("이미 최신 버전입니다.", 3000)
-                else:
-                    # 업데이트됨 - 재시작 옵션 제공
-                    restart_reply = QMessageBox.question(
-                        self,
-                        "업데이트 완료",
-                        f"업데이트가 완료되었습니다.\n\n변경사항:\n{output}\n\n변경사항을 적용하려면 프로그램을 재시작해야 합니다. 지금 재시작하시겠습니까?",
-                        QMessageBox.Yes | QMessageBox.No,
-                        QMessageBox.Yes
-                    )
-                    
-                    if restart_reply == QMessageBox.Yes:
-                        # 프로그램 재시작
-                        self.restart_application()
-                    else:
-                        self.show_temporary_message("업데이트 완료. 재시작 시 변경사항이 적용됩니다.", 5000)
-            else:
-                # 실패
-                error_output = result.stderr.strip() or result.stdout.strip()
-                logging.error(f"Git 업데이트 실패: {error_output}")
-                
-                QMessageBox.critical(
-                    self,
-                    "업데이트 실패",
-                    f"Git 업데이트에 실패했습니다.\n\n오류 내용:\n{error_output}\n\n네트워크 연결이나 Git 설정을 확인해주세요."
-                )
-                self.show_temporary_message("업데이트에 실패했습니다.", 3000)
-                
-        except subprocess.TimeoutExpired:
-            logging.error("Git 업데이트 타임아웃")
-            QMessageBox.critical(self, "업데이트 실패", "업데이트 요청이 시간 초과되었습니다.\n네트워크 연결을 확인해주세요.")
-            self.show_temporary_message("업데이트 시간 초과", 3000)
-            
-        except FileNotFoundError:
-            logging.error("Git 명령어를 찾을 수 없음")
-            QMessageBox.critical(self, "업데이트 실패", "Git이 설치되어 있지 않거나 PATH에 등록되어 있지 않습니다.\n\nGit을 설치하고 PATH에 추가한 후 다시 시도해주세요.")
-            self.show_temporary_message("Git이 설치되어 있지 않습니다.", 3000)
-            
-        except Exception as e:
-            logging.error(f"Git 업데이트 중 예상치 못한 오류: {e}")
-            QMessageBox.critical(self, "업데이트 실패", f"업데이트 중 오류가 발생했습니다:\n\n{str(e)}")
-            self.show_temporary_message("업데이트 중 오류가 발생했습니다.", 3000)
-            
-            # Supabase에도 에러 로깅
-            error_logger = get_error_logger()
-            if error_logger:
-                error_logger.log_error(e, "Git 업데이트 오류", {"context": "git_update"})
-        
-        finally:
-            self.set_loading_state(False)
 
-    def restart_application(self):
-        """애플리케이션을 재시작합니다."""
-        try:
-            logging.info("애플리케이션 재시작 중...")
-            
-            # 현재 실행 중인 파일의 경로를 가져옴
-            if getattr(sys, 'frozen', False):
-                # PyInstaller로 빌드된 실행 파일
-                executable = sys.executable
-            else:
-                # Python 스크립트로 실행 중
-                executable = sys.executable
-                script_path = os.path.abspath(sys.argv[0])
-            
-            # 새 프로세스 시작
-            if getattr(sys, 'frozen', False):
-                # 실행 파일인 경우
-                subprocess.Popen([executable])
-            else:
-                # Python 스크립트인 경우
-                subprocess.Popen([executable, script_path])
-            
-            # 현재 프로그램 종료
-            sys.exit(0)
-            
-        except Exception as e:
-            logging.error(f"애플리케이션 재시작 실패: {e}")
-            QMessageBox.critical(
-                self,
-                "재시작 실패", 
-                f"자동 재시작에 실패했습니다.\n수동으로 프로그램을 재시작해주세요.\n\n오류: {str(e)}"
-            )
-            self.show_temporary_message("수동으로 프로그램을 재시작해주세요.", 5000)
