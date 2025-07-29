@@ -7,8 +7,8 @@ from datetime import datetime, time
 from src.error_logger import get_error_logger, log_exception
 
 from src.printer.escpos_printer import print_receipt_esc_usb  # USB 프린터 출력 함수
-from src.printer.file_printer import print_receipt as file_print_receipt, print_receipt_win  # 파일/윈도우 프린터 출력 함수
-from src.printer.com_printer import print_kitchen_receipt_com, test_com_printer  # COM 포트 프린터 출력 함수
+from src.printer.file_printer import file_print_receipt  # 파일 프린터 출력 함수
+from src.printer.com_printer import print_receipt_com, test_com_printer  # COM 포트 프린터 출력 함수
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class PrinterManager:
             "auto_print": {
                 "enabled": False,
                 "retry_count": 3,
-                "retry_interval": 30,
+                "retry_interval": 10,
                 "check_printer_status": True
             }
         }
@@ -391,12 +391,12 @@ class PrinterManager:
                     order_id=order_data.get('order_id', 'Unknown')
                 )
 
-        # 파일로 백업 출력
-        file_success = file_print_receipt(order_data)
+        # 파일로 백업 출력 (손님용)
+        file_success = file_print_receipt(order_data, "customer")
         if file_success:
-            logger.info("파일 프린터 출력 성공")
+            logger.info("손님용 파일 프린터 출력 성공")
         else:
-            logger.error("파일 프린터 출력 실패")
+            logger.error("손님용 파일 프린터 출력 실패")
 
         logger.info(f"손님용 프린터 출력 결과: 실제프린터={success}, 파일={file_success}")
         return success
@@ -414,7 +414,7 @@ class PrinterManager:
         baudrate = kitchen_config.get("baudrate", 9600)
         
         try:
-            success = print_kitchen_receipt_com(order_data, com_port, baudrate)
+            success = print_receipt_com(order_data, com_port, baudrate)
             if success:
                 logger.info(f"주방용 영수증 출력 성공: {com_port}")
             else:
@@ -426,6 +426,15 @@ class PrinterManager:
                         error=Exception(f"주방용 COM 포트 프린터({com_port}) 출력 실패"),
                         order_id=order_data.get('order_id', 'Unknown')
                     )
+            
+            # 파일로 백업 출력 (주방용)
+            file_success = file_print_receipt(order_data, "kitchen")
+            if file_success:
+                logger.info("주방용 파일 프린터 출력 성공")
+            else:
+                logger.error("주방용 파일 프린터 출력 실패")
+            
+            logger.info(f"주방용 프린터 출력 결과: 실제프린터={success}, 파일={file_success}")
             return success
         except Exception as e:
             logger.exception(f"주방용 영수증 출력 중 예외 발생: {e}")

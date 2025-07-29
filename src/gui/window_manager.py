@@ -104,11 +104,11 @@ class WindowManager(QObject):
             # 주문 위젯에서 데이터 가져오기
             order_widget = self.main_window.order_widget
             
-            # 대기 중인 주문 수 계산
+            # 대기 중인 주문 수 계산 (is_printed 기준으로 통일)
             pending_orders = 0
             if hasattr(order_widget, 'orders') and order_widget.orders:
                 pending_orders = len([order for order in order_widget.orders 
-                                    if order.get('status') in ['pending', 'preparing']])
+                                    if not order.get('is_printed', False)])
             
             # 자동출력 상태 확인
             auto_print_enabled = False
@@ -168,13 +168,13 @@ class WindowManager(QObject):
                     pending_count = len(pending_orders)
                 except Exception as e:
                     logging.error(f"캐시에서 주문 데이터 조회 오류: {e}")
-                    # 캐시 조회 실패 시 기존 방식 사용
+                    # 캐시 조회 실패 시 기존 방식 사용 (is_printed 기준으로 통일)
                     pending_count = len([order for order in getattr(order_widget, 'orders', []) 
-                                       if order.get('status') in ['pending', 'preparing']])
+                                       if not order.get('is_printed', False)])
             else:
-                # 기존 orders 리스트 사용
+                # 기존 orders 리스트 사용 (is_printed 기준으로 통일)
                 pending_count = len([order for order in getattr(order_widget, 'orders', []) 
-                                   if order.get('status') in ['pending', 'preparing']])
+                                   if not order.get('is_printed', False)])
             
             auto_print_enabled = False
             if hasattr(order_widget, 'printer_manager'):

@@ -110,54 +110,7 @@ class OrderWidget(QWidget):
         """)
         top_layout.addWidget(self.print_both_btn)
 
-        # 다중 선택 관련 버튼들
-        self.select_all_btn = QPushButton("전체 선택")
-        self.select_all_btn.clicked.connect(self.select_all_orders)
-        top_layout.addWidget(self.select_all_btn)
-        
-        self.deselect_all_btn = QPushButton("선택 해제")
-        self.deselect_all_btn.clicked.connect(self.deselect_all_orders)
-        top_layout.addWidget(self.deselect_all_btn)
-        
-        self.batch_complete_btn = QPushButton("선택항목 완료")
-        self.batch_complete_btn.clicked.connect(self.batch_mark_complete)
-        self.batch_complete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-            QPushButton:pressed {
-                background-color: #1e7e34;
-            }
-        """)
-        top_layout.addWidget(self.batch_complete_btn)
-        
-        self.batch_reset_btn = QPushButton("선택항목 초기화")
-        self.batch_reset_btn.clicked.connect(self.batch_mark_new)
-        self.batch_reset_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ffc107;
-                color: #212529;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #e0a800;
-            }
-            QPushButton:pressed {
-                background-color: #d39e00;
-            }
-        """)
-        top_layout.addWidget(self.batch_reset_btn)
+
         
         # 주문취소 버튼 추가
         self.cancel_order_btn = QPushButton("주문취소")
@@ -336,38 +289,89 @@ class OrderWidget(QWidget):
             self.progress_bar.setValue(100)
     
     def update_order_status(self, order_id: int, is_printed: bool):
-        """주문의 출력 상태를 업데이트합니다."""
+        """주문의 출력 상태를 업데이트합니다 (로컬 DB + Supabase 양방향 동기화)."""
+        local_success = False
+        supabase_success = False
+        
         try:
+            # 1. 로컬 SQLite 업데이트
             with sqlite3.connect(self.cache.db_path) as conn:
                 cursor = conn.cursor()
                 
                 # 현재 시간
                 now = datetime.now().isoformat()
                 
-                # is_printed 상태만 업데이트
+                # is_printed 상태 업데이트
                 cursor.execute(
                     'UPDATE "order" SET is_printed = ?, last_print_attempt = ? WHERE order_id = ?',
                     (1 if is_printed else 0, now, order_id)
                 )
                 
                 conn.commit()
-                logging.info(f"주문 {order_id}의 출력 상태를 {is_printed}로 업데이트")
+                local_success = True
+                logging.info(f"로컬 DB: 주문 {order_id}의 출력 상태를 {is_printed}로 업데이트 성공")
                 
-                # Supabase에도 상태 업데이트 시도
-                if self.cache.base_url and is_printed:
-                    try:
-                        response = requests.patch(
-                            f"{self.cache.base_url}/rest/v1/order",
-                            headers=self.cache.headers,
-                            json={"is_printed": True},
-                            params={"order_id": f"eq.{order_id}"}
-                        )
-                        response.raise_for_status()
-                    except Exception as e:
-                        logging.error(f"Supabase 업데이트 실패: {e}")
-                        
         except Exception as e:
-            logging.error(f"주문 상태 업데이트 오류: {e}")
+            logging.error(f"로컬 DB 주문 상태 업데이트 오류: {e}")
+            return False
+        
+        # 2. Supabase 업데이트 (is_printed True/False 모든 경우)
+        if self.cache.base_url and local_success:
+            supabase_success = self._update_supabase_order_status(order_id, is_printed)
+        
+        # 3. 결과 처리
+        if local_success and supabase_success:
+            logging.info(f"주문 {order_id} 상태 업데이트 완전 성공 (로컬+Supabase)")
+            return True
+        elif local_success and not supabase_success:
+            logging.warning(f"주문 {order_id} 상태 업데이트 부분 성공 (로컬만 성공, Supabase 실패)")
+            # Supabase 실패해도 로컬은 성공했으므로 True 반환
+            return True
+        else:
+            logging.error(f"주문 {order_id} 상태 업데이트 실패")
+            return False
+    
+    def _update_supabase_order_status(self, order_id: int, is_printed: bool, max_retries: int = 3) -> bool:
+        """Supabase의 주문 상태를 업데이트합니다 (재시도 로직 포함)."""
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.patch(
+                    f"{self.cache.base_url}/rest/v1/order",
+                    headers=self.cache.headers,
+                    json={
+                        "is_printed": is_printed,
+                        "last_print_attempt": datetime.now().isoformat()
+                    },
+                    params={"order_id": f"eq.{order_id}"},
+                    timeout=10  # 10초 타임아웃
+                )
+                response.raise_for_status()
+                
+                logging.info(f"Supabase: 주문 {order_id}의 is_printed를 {is_printed}로 업데이트 성공 (시도 {attempt + 1}/{max_retries})")
+                return True
+                
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Supabase 업데이트 시도 {attempt + 1}/{max_retries} 실패: {e}")
+                if attempt == max_retries - 1:
+                    logging.error(f"Supabase 업데이트 최종 실패 (주문 {order_id}): {e}")
+                    # Supabase에도 에러 로깅
+                    error_logger = get_error_logger()
+                    if error_logger:
+                        error_logger.log_error(
+                            e, 
+                            f"Supabase 주문 상태 업데이트 실패", 
+                            {"order_id": order_id, "is_printed": is_printed, "attempts": max_retries}
+                        )
+                else:
+                    # 재시도 전 잠시 대기
+                    import time
+                    time.sleep(0.5 * (attempt + 1))  # 점진적 지연
+            except Exception as e:
+                logging.error(f"Supabase 업데이트 예상치 못한 오류 (주문 {order_id}): {e}")
+                break
+        
+        return False
 
     def check_for_updates(self):
         """미출력 주문을 확인하고 자동 출력을 처리합니다."""
@@ -902,15 +906,23 @@ class OrderWidget(QWidget):
                 
             logging.info(f"주문 {order_id} 출력 상태 변경: {order_data.get('is_printed')} -> {is_printed}")
             
-            # 데이터베이스 업데이트
-            self.update_order_status(order_id, is_printed)
+            # 데이터베이스 업데이트 (로컬 + Supabase)
+            update_success = self.update_order_status(order_id, is_printed)
             
-            # 로컬 order_data도 업데이트
-            order_data["is_printed"] = is_printed
-            order_item.setData(Qt.UserRole, order_data)
-            
-            # 성공 메시지 표시
-            self.show_temporary_message(f"주문 {order_id}의 출력 상태가 '{'출력완료' if is_printed else '신규'}'로 변경되었습니다.", 3000)
+            if update_success:
+                # 로컬 order_data도 업데이트
+                order_data["is_printed"] = is_printed
+                order_item.setData(Qt.UserRole, order_data)
+                
+                # 성공 메시지 표시
+                self.show_temporary_message(f"주문 {order_id}의 출력 상태가 '{'출력완료' if is_printed else '신규'}'로 변경되었습니다.", 3000)
+            else:
+                # 업데이트 실패 시 원래 상태로 복원
+                logging.error(f"주문 {order_id} 체크박스 상태 변경 실패")
+                QMessageBox.warning(self, "업데이트 실패", f"주문 {order_id}의 출력 상태 변경에 실패했습니다.\n다시 시도해주세요.")
+                # 원래 상태로 되돌리기
+                self.refresh_orders()
+                return
             
         except Exception as e:
             logging.error(f"체크박스 상태 변경 오류: {e}")
@@ -1083,15 +1095,23 @@ class OrderWidget(QWidget):
             # 새로운 is_printed 값 결정
             is_printed = (new_status == "출력완료")
             
-            # 데이터베이스 업데이트
-            self.update_order_status(order_id, is_printed)
+            # 데이터베이스 업데이트 (로컬 + Supabase)
+            update_success = self.update_order_status(order_id, is_printed)
             
-            # 로컬 order_data도 업데이트
-            order_data["is_printed"] = is_printed
-            order_item.setData(Qt.UserRole, order_data)
-            
-            # 성공 메시지 표시
-            self.show_temporary_message(f"주문 {order_id}의 상태가 '{new_status}'로 변경되었습니다.", 3000)
+            if update_success:
+                # 로컬 order_data도 업데이트
+                order_data["is_printed"] = is_printed
+                order_item.setData(Qt.UserRole, order_data)
+                
+                # 성공 메시지 표시
+                self.show_temporary_message(f"주문 {order_id}의 상태가 '{new_status}'로 변경되었습니다.", 3000)
+            else:
+                # 업데이트 실패 시 원래 상태로 복원
+                logging.error(f"주문 {order_id} 상태 변경 실패")
+                QMessageBox.warning(self, "업데이트 실패", f"주문 {order_id}의 상태 변경에 실패했습니다.\n다시 시도해주세요.")
+                # 원래 상태로 되돌리기
+                self.refresh_orders()
+                return
             
         except Exception as e:
             logging.error(f"상태 변경 오류: {e}")
@@ -1142,6 +1162,8 @@ class OrderWidget(QWidget):
 
             if reply == QMessageBox.Yes:
                 success_count = 0
+                failed_count = 0
+                
                 for row in selected_rows:
                     order_item = self.order_table.item(row, 1)  # 주문번호 컬럼
                     if order_item:
@@ -1149,25 +1171,35 @@ class OrderWidget(QWidget):
                         if order_data:
                             order_id = order_data.get("order_id")
                             
-                            # 데이터베이스 업데이트
-                            self.update_order_status(order_id, True)
+                            # 데이터베이스 업데이트 (로컬 + Supabase)
+                            update_success = self.update_order_status(order_id, True)
                             
-                            # 로컬 데이터 업데이트
-                            order_data["is_printed"] = True
-                            order_item.setData(Qt.UserRole, order_data)
-                            
-                            # UI 업데이트
-                            checkbox = self.order_table.cellWidget(row, 0)
-                            if checkbox:
-                                checkbox.setChecked(True)
-                            
-                            status_combo = self.order_table.cellWidget(row, 6)
-                            if status_combo:
-                                status_combo.setCurrentText("출력완료")
-                            
-                            success_count += 1
+                            if update_success:
+                                # 로컬 데이터 업데이트
+                                order_data["is_printed"] = True
+                                order_item.setData(Qt.UserRole, order_data)
+                                
+                                # UI 업데이트
+                                checkbox = self.order_table.cellWidget(row, 0)
+                                if checkbox:
+                                    checkbox.setChecked(True)
+                                
+                                status_combo = self.order_table.cellWidget(row, 6)
+                                if status_combo:
+                                    status_combo.setCurrentText("출력완료")
+                                
+                                success_count += 1
+                            else:
+                                failed_count += 1
+                                logging.error(f"주문 {order_id} 일괄 완료 처리 실패")
 
-                self.show_temporary_message(f"{success_count}개 주문이 '출력완료' 상태로 변경되었습니다.", 3000)
+                # 결과 메시지 표시
+                if failed_count > 0:
+                    message = f"{success_count}개 성공, {failed_count}개 실패"
+                    self.show_temporary_message(message, 4000)
+                    QMessageBox.warning(self, "일부 실패", f"일괄 처리 결과:\n성공: {success_count}개\n실패: {failed_count}개")
+                else:
+                    self.show_temporary_message(f"{success_count}개 주문이 '출력완료' 상태로 변경되었습니다.", 3000)
 
         except Exception as e:
             logging.error(f"일괄 완료 처리 오류: {e}")
@@ -1192,6 +1224,8 @@ class OrderWidget(QWidget):
 
             if reply == QMessageBox.Yes:
                 success_count = 0
+                failed_count = 0
+                
                 for row in selected_rows:
                     order_item = self.order_table.item(row, 1)  # 주문번호 컬럼
                     if order_item:
@@ -1199,25 +1233,35 @@ class OrderWidget(QWidget):
                         if order_data:
                             order_id = order_data.get("order_id")
                             
-                            # 데이터베이스 업데이트
-                            self.update_order_status(order_id, False)
+                            # 데이터베이스 업데이트 (로컬 + Supabase)
+                            update_success = self.update_order_status(order_id, False)
                             
-                            # 로컬 데이터 업데이트
-                            order_data["is_printed"] = False
-                            order_item.setData(Qt.UserRole, order_data)
-                            
-                            # UI 업데이트
-                            checkbox = self.order_table.cellWidget(row, 0)
-                            if checkbox:
-                                checkbox.setChecked(False)
-                            
-                            status_combo = self.order_table.cellWidget(row, 6)
-                            if status_combo:
-                                status_combo.setCurrentText("신규")
-                            
-                            success_count += 1
+                            if update_success:
+                                # 로컬 데이터 업데이트
+                                order_data["is_printed"] = False
+                                order_item.setData(Qt.UserRole, order_data)
+                                
+                                # UI 업데이트
+                                checkbox = self.order_table.cellWidget(row, 0)
+                                if checkbox:
+                                    checkbox.setChecked(False)
+                                
+                                status_combo = self.order_table.cellWidget(row, 6)
+                                if status_combo:
+                                    status_combo.setCurrentText("신규")
+                                
+                                success_count += 1
+                            else:
+                                failed_count += 1
+                                logging.error(f"주문 {order_id} 일괄 초기화 처리 실패")
 
-                self.show_temporary_message(f"{success_count}개 주문이 '신규' 상태로 변경되었습니다.", 3000)
+                # 결과 메시지 표시
+                if failed_count > 0:
+                    message = f"{success_count}개 성공, {failed_count}개 실패"
+                    self.show_temporary_message(message, 4000)
+                    QMessageBox.warning(self, "일부 실패", f"일괄 처리 결과:\n성공: {success_count}개\n실패: {failed_count}개")
+                else:
+                    self.show_temporary_message(f"{success_count}개 주문이 '신규' 상태로 변경되었습니다.", 3000)
 
         except Exception as e:
             logging.error(f"일괄 초기화 처리 오류: {e}")

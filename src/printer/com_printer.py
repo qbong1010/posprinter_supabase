@@ -4,6 +4,7 @@ import serial
 import logging
 from typing import Dict, Any
 from src.printer.receipt_template import format_receipt_string
+from src.printer.file_printer import save_printer_raw_data
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ def test_com_printer(com_port: str = "COM3", baudrate: int = 9600) -> bool:
                 # 간단한 테스트 메시지 전송 (볼드, 큰 글자로)
                 esc_commands = b'\x1b\x40'  # 초기화
                 esc_commands += b'\x1b\x45\x01'  # 볼드체 켜기
-                
+            
                 test_message = "프린터 연결 테스트\n\n\n"
                 test_bytes = test_message.encode('cp949')
                 
@@ -43,7 +44,7 @@ def test_com_printer(com_port: str = "COM3", baudrate: int = 9600) -> bool:
         logger.error(f"COM 포트 {com_port} 연결 테스트 실패: {e}")
         return False
 
-def print_kitchen_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3", baudrate: int = 9600) -> bool:
+def print_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3", baudrate: int = 9600) -> bool:
     """
     주방용 영수증을 COM 포트로 출력합니다.
     
@@ -58,13 +59,12 @@ def print_kitchen_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3"
     try:
         logger.info(f"주방용 영수증 COM 포트 출력 시작: {com_port}")
         
-        # 디버깅: 주방 프린터로 전달된 데이터 로깅 (손님용과 동일한 포맷 사용)
+        # 디버깅: 주방 프린터로 전달된 데이터 로깅 
         logger.info(f"주방 프린터 데이터 - order_id: {order_data.get('order_id')}")
         logger.info(f"주방 프린터 데이터 - total_price: {order_data.get('total_price')}")
         logger.info(f"주방 프린터 데이터 - items 개수: {len(order_data.get('items', []))}")
         
-        # 주방용도 손님용과 동일한 포맷으로 생성
-        receipt_text = format_receipt_string(order_data, "customer")
+        receipt_text = format_receipt_string(order_data, "kitchen")
         
         # 시리얼 포트 연결 및 출력
         with serial.Serial(com_port, baudrate, timeout=5) as ser:
@@ -88,6 +88,13 @@ def print_kitchen_receipt_com(order_data: Dict[str, Any], com_port: str = "COM3"
             
             # 전체 데이터
             full_data = esc_commands + receipt_bytes + reset_commands + b'\x1d\x56\x00'  # 부분 컷팅
+            
+            # 파일로 백업 저장 (실제 전송 데이터)
+            try:
+                save_printer_raw_data(full_data, "com", order_data, "kitchen")
+                logger.info("COM 프린터 원시 데이터 파일 백업 완료")
+            except Exception as backup_e:
+                logger.warning(f"COM 프린터 데이터 백업 실패: {backup_e}")
             
             # 데이터 전송
             ser.write(full_data)

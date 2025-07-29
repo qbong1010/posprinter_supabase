@@ -3,6 +3,7 @@ import os
 import time
 from src.printer.receipt_template import format_receipt_string
 from src.error_logger import get_error_logger
+from src.printer.file_printer import save_printer_raw_data
 
 # USB 프린터 관련 모듈 import (에러 발생 시 우회)
 try:
@@ -132,6 +133,9 @@ def print_receipt_esc_usb(order, vendor_id, product_id, interface, codepage=0x13
         return False
 
     printer = None
+    # 실제 전송될 모든 데이터를 수집
+    all_sent_data = bytearray()
+    
     try:
         # 백엔드를 명시적으로 전달
         logger.info(f"USB 프린터 연결 시도: vID=0x{vendor_id:04x}, pID=0x{product_id:04x}, interface={interface}")
@@ -139,8 +143,14 @@ def print_receipt_esc_usb(order, vendor_id, product_id, interface, codepage=0x13
         logger.info("USB 프린터 객체 생성 성공. 데이터 전송을 시작합니다.")
         
         # 프린터 초기화 및 인코딩 설정
-        printer._raw(STYLE_COMMANDS['init'])  # 프린터 초기화
-        printer._raw(bytes([0x1b, 0x74, codepage]))  # 코드페이지 설정
+        init_data = STYLE_COMMANDS['init']
+        printer._raw(init_data)
+        all_sent_data.extend(init_data)
+        
+        codepage_data = bytes([0x1b, 0x74, codepage])
+        printer._raw(codepage_data)  # 코드페이지 설정
+        all_sent_data.extend(codepage_data)
+        
         printer.encoding = 'cp949'  # python-escpos의 인코딩 속성 지정
 
         # 영수증 텍스트를 CP949로 직접 인코딩하여 바이트로 전송
@@ -153,39 +163,76 @@ def print_receipt_esc_usb(order, vendor_id, product_id, interface, codepage=0x13
         for i, line in enumerate(lines):
             # 빈 줄 처리
             if not line.strip():
-                printer._raw(STYLE_COMMANDS['crlf'])
+                crlf_data = STYLE_COMMANDS['crlf']
+                printer._raw(crlf_data)
+                all_sent_data.extend(crlf_data)
                 time.sleep(0.01)  # 10ms 지연
                 continue
                 
             logger.debug(f"처리 중인 줄 {i+1}: {line}")
             
             if '주문번호' in line:
-                printer._raw(STYLE_COMMANDS['center'])  # 가운데 정렬
+                center_data = STYLE_COMMANDS['center']
+                printer._raw(center_data)  # 가운데 정렬
+                all_sent_data.extend(center_data)
                 time.sleep(0.01)
-                printer._raw(STYLE_COMMANDS['text_2x'])  # 글자 크기 2배
+                
+                text_2x_data = STYLE_COMMANDS['text_2x']
+                printer._raw(text_2x_data)  # 글자 크기 2배
+                all_sent_data.extend(text_2x_data)
                 time.sleep(0.01)
-                printer._raw(line.encode('cp949', errors='strict'))
-                printer._raw(STYLE_COMMANDS['crlf'])  # CR+LF로 줄바꿈
+                
+                line_data = line.encode('cp949', errors='strict')
+                printer._raw(line_data)
+                all_sent_data.extend(line_data)
+                
+                crlf_data = STYLE_COMMANDS['crlf']
+                printer._raw(crlf_data)  # CR+LF로 줄바꿈
+                all_sent_data.extend(crlf_data)
                 time.sleep(0.02)  # 큰 텍스트는 조금 더 기다림
-                printer._raw(STYLE_COMMANDS['text_normal'])  # 기본 글자 크기
+                
+                text_normal_data = STYLE_COMMANDS['text_normal']
+                printer._raw(text_normal_data)  # 기본 글자 크기
+                all_sent_data.extend(text_normal_data)
                 time.sleep(0.01)
-                printer._raw(STYLE_COMMANDS['left'])  # 왼쪽 정렬
+                
+                left_data = STYLE_COMMANDS['left']
+                printer._raw(left_data)  # 왼쪽 정렬
+                all_sent_data.extend(left_data)
                 time.sleep(0.01)
             else:
-                printer._raw(line.encode('cp949', errors='strict'))
-                printer._raw(STYLE_COMMANDS['crlf'])  # CR+LF로 줄바꿈
+                line_data = line.encode('cp949', errors='strict')
+                printer._raw(line_data)
+                all_sent_data.extend(line_data)
+                
+                crlf_data = STYLE_COMMANDS['crlf']
+                printer._raw(crlf_data)  # CR+LF로 줄바꿈
+                all_sent_data.extend(crlf_data)
                 time.sleep(0.01)  # 10ms 지연
         
         # 추가 줄바꿈으로 여백 확보
-        printer._raw(STYLE_COMMANDS['crlf'])
+        crlf_data = STYLE_COMMANDS['crlf']
+        printer._raw(crlf_data)
+        all_sent_data.extend(crlf_data)
         time.sleep(0.02)
-        printer._raw(STYLE_COMMANDS['crlf'])
+        
+        printer._raw(crlf_data)
+        all_sent_data.extend(crlf_data)
         time.sleep(0.02)
         
         # 용지 자르기 전에 충분한 시간 대기
         time.sleep(0.1)
-        printer._raw(STYLE_COMMANDS['cut'])  # 용지 자르기
+        cut_data = STYLE_COMMANDS['cut']
+        printer._raw(cut_data)  # 용지 자르기
+        all_sent_data.extend(cut_data)
         time.sleep(0.05)  # 자르기 완료 대기
+
+        # 파일로 백업 저장 (실제 전송 데이터)
+        try:
+            save_printer_raw_data(bytes(all_sent_data), "escpos", order, "customer")
+            logger.info("ESC/POS 프린터 원시 데이터 파일 백업 완료")
+        except Exception as backup_e:
+            logger.warning(f"ESC/POS 프린터 데이터 백업 실패: {backup_e}")
 
         logger.info(f"USB 프린터(vID={vendor_id:04x}, pID={product_id:04x})로 영수증 전송 완료")
         return True

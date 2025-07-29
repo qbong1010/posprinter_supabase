@@ -228,6 +228,7 @@ class SupabaseCache:
         cursor = conn.cursor()
         query = """
         SELECT o.order_id, o.company_id, o.is_dine_in, o.total_price, o.created_at, o.signature_data,
+               o.is_printed, o.print_status, o.print_attempts, o.last_print_attempt,
                c.company_name, c.required_signature
         FROM "order" o
         JOIN company c ON c.company_id = o.company_id

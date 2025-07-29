@@ -1,7 +1,7 @@
 {
   "customer_printer": {
     "printer_type": "escpos",
-    "printer_name": "SLK-TS400",
+    "printer_name": "OneNote (Desktop)",
     "usb_info": {
       "vendor_id": "0525",
       "product_id": "A700",
